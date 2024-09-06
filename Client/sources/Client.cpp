@@ -252,12 +252,12 @@ void Client::listenForCommands() const
         if (bytesReceived != SOCKET_ERROR)
         {
             std::string command(buf, 0, bytesReceived);
-            if (command == "scn")
+            if (command == "/scn")
             {
                 std::cout << "Received screenshot command" << std::endl;
                 sendScreenshot(m_socket);
             }
-            else if (command == "exit")
+            else if (command == "/exit")
             {
                 std::cout << "Server is shutting down" << std::endl;
             }
