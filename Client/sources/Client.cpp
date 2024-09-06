@@ -211,10 +211,11 @@ void Client::captureScreenshot(const std::string& wPath) {
  */
 void Client::sendScreenshot(SOCKET sock) {
     const std::string screenshotFile = "screenshot.bmp";
-    captureScreenshot((Centaurus::contentPath / screenshotFile).string());
+    const std::string screenPath = (Centaurus::contentPath / screenshotFile).string();
+    captureScreenshot(screenPath);
 
     FILE* file;
-    errno_t err = fopen_s(&file, screenshotFile.c_str(), "rb");
+    errno_t err = fopen_s(&file, screenPath.c_str(), "rb");
     if (err != 0)
     {
         std::cerr << "Error opening file for reading" << std::endl;
