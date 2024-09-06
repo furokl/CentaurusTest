@@ -1,20 +1,22 @@
 #pragma once
 
 #include <winsock2.h>
-#include <ws2tcpip.h>
 #include <vector>
 #include <thread>
 #include <atomic>
 
+#include "ClientInfo.h"
+
 class Server {
-    int m_port;
+    u_short m_port;
     SOCKET m_listeningSocket;
     std::vector<SOCKET> m_clientSockets;
+    std::vector<FClientInfo> m_clients;
     std::vector<std::thread> m_clientThreads;
     std::atomic<bool> m_serverRunning;
     
 public:
-    Server(int port);
+    Server(u_short port);
     ~Server();
 
     void start();

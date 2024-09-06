@@ -7,19 +7,24 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-Server::Server(int port) : m_port(port), m_serverRunning(true) {
+Server::Server(u_short port)
+    : m_port(port)
+    , m_serverRunning(true)
+{
     WSADATA wsData;
     WORD ver = MAKEWORD(2, 2);
-    if (WSAStartup(ver, &wsData) != 0) {
+    if (WSAStartup(ver, &wsData) != 0)
+    {
         std::cerr << "Can't initialize Winsock! Quitting" << std::endl;
-        exit(1);
+        stop();
     }
 
     m_listeningSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (m_listeningSocket == INVALID_SOCKET) {
+    if (m_listeningSocket == INVALID_SOCKET)
+    {
         std::cerr << "Can't create a socket! Quitting" << std::endl;
         WSACleanup();
-        exit(1);
+        stop();
     }
 
     sockaddr_in hint;
@@ -27,18 +32,20 @@ Server::Server(int port) : m_port(port), m_serverRunning(true) {
     hint.sin_port = htons(port);
     hint.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(m_listeningSocket, (sockaddr*)&hint, sizeof(hint)) == SOCKET_ERROR) {
+    if (bind(m_listeningSocket, (sockaddr*)&hint, sizeof(hint)) == SOCKET_ERROR)
+    {
         std::cerr << "Can't bind socket! Quitting" << std::endl;
         closesocket(m_listeningSocket);
         WSACleanup();
-        exit(1);
+        stop();
     }
 
-    if (listen(m_listeningSocket, SOMAXCONN) == SOCKET_ERROR) {
+    if (listen(m_listeningSocket, SOMAXCONN) == SOCKET_ERROR)
+    {
         std::cerr << "Can't listen on socket! Quitting" << std::endl;
         closesocket(m_listeningSocket);
         WSACleanup();
-        exit(1);
+        stop();
     }
 }
 
@@ -46,6 +53,9 @@ Server::~Server() {
     stop();
 }
 
+/**
+ * Начало сеанса.
+ */
 void Server::start() {
     std::thread acceptThread(&Server::acceptClients, this);
     std::thread commandThread(&Server::processCommands, this);
@@ -53,10 +63,14 @@ void Server::start() {
     commandThread.join();
 }
 
+/**
+ * Завершение сеанса.
+ */
 void Server::stop() {
     m_serverRunning = false;
 
-    for (SOCKET sock : m_clientSockets) {
+    for (SOCKET sock : m_clientSockets)
+    {
         send(sock, "exit", 4, 0);
         closesocket(sock);
     }
@@ -65,83 +79,107 @@ void Server::stop() {
     WSACleanup();
 }
 
-void Server::handleClient(SOCKET clientSocket) {
-    char clientInfo[4096];
-    ZeroMemory(clientInfo, 4096);
-    int infoReceived = recv(clientSocket, clientInfo, 4096, 0);
-    if (infoReceived > 0) {
-        std::cout << "Client connected: " << std::string(clientInfo, 0, infoReceived) << std::endl;
-    } else {
-        std::cerr << "Failed to receive client info." << std::endl;
-    }
+/**
+ * Прослушка конкретного клиента.
+ * @param clientSocket Сокет клиента.
+ */
+void Server::handleClient(const SOCKET clientSocket) {
+    FClientInfo clientInfo;
+    sockaddr_in clientAddr;
+    int clientAddrSize = sizeof(clientAddr);
+    getpeername(clientSocket, (sockaddr*)&clientAddr, &clientAddrSize);
+    strcpy(clientInfo.ipv4, inet_ntoa(clientAddr.sin_addr));
+
+    // Получаем время подключения
+    auto now = std::chrono::system_clock::now();
+    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::strftime(clientInfo.time, sizeof(clientInfo.time), "%Y-%m-%d %H:%M:%S", std::localtime(&currentTime));
+
+    // Получаем имя пользователя и компьютера
+    char username[256];
+    DWORD username_len = sizeof(username);
+    GetUserNameA(username, &username_len);
+    strcpy(clientInfo.user, username);
+
+    // Получаем имя компьютера
+    char computerName[256];
+    DWORD computerName_len = sizeof(computerName);
+    GetComputerNameA(computerName, &computerName_len);
+    strcpy(clientInfo.name, computerName);
+
+    // Добавляем клиента в вектор
+    m_clients.push_back(clientInfo);
+    std::cout << "Client connected: ID=" << clientInfo.id << ", IP=" << clientInfo.ipv4 << std::endl;
 
     char buf[4096];
-    
     while (m_serverRunning) {
         ZeroMemory(buf, 4096);
         int bytesReceived = recv(clientSocket, buf, 4096, 0);
-        if (bytesReceived == SOCKET_ERROR) {
-            std::cerr << "Error receiving data" << std::endl;
-            break;
-        }
-
-        if (bytesReceived == 0) {
-            std::cout << "Client disconnected" << std::endl;
-            break;
-        }
-
-        std::cout << "Received: " << std::string(buf, 0, bytesReceived) << std::endl;
-
-        if (std::string(buf, 0, bytesReceived) == "screenshot") {
-            std::cout << "Requesting screenshot..." << std::endl;
-            char screenshotBuf[8192];
-            int screenshotBytesReceived = recv(clientSocket, screenshotBuf, 8192, 0);
-            
-            FILE* file;
-            errno_t err = fopen_s(&file, "screenshot.bmp", "wb");
-            if (err != 0) {
-                std::cerr << "Error opening file for writing" << std::endl;
-                return;
-            }
-            fwrite(screenshotBuf, sizeof(char), screenshotBytesReceived, file);
-            fclose(file);
-
-            std::cout << "Screenshot saved as screenshot.bmp" << std::endl;
-        }
+        // Обработка полученных данных
     }
+
     closesocket(clientSocket);
 }
 
+/**
+ * Прослушка новых клиентов.
+ */
 void Server::acceptClients() {
-    while (m_serverRunning) {
+    while (m_serverRunning)
+    {
         sockaddr_in client;
         int clientSize = sizeof(client);
         SOCKET clientSocket = accept(m_listeningSocket, (sockaddr*)&client, &clientSize);
 
-        if (clientSocket == INVALID_SOCKET) {
+        if (clientSocket == INVALID_SOCKET)
+        {
             std::cerr << "Invalid client socket" << std::endl;
             continue;
         }
 
         m_clientSockets.push_back(clientSocket);
         m_clientThreads.emplace_back(&Server::handleClient, this, clientSocket);
-
-        std::cout << "Client connected!" << std::endl;
     }
 }
 
+/**
+ * Реализация команд сервера.
+ */
 void Server::processCommands() {
     std::string command;
-    while (m_serverRunning) {
-        std::cout << "Enter command (screenshot): ";
+    while (m_serverRunning)
+    {
         std::cin >> command;
 
-        if (command == "screenshot") {
-            for (SOCKET sock : m_clientSockets) {
+        if (command == "/scn")
+        {
+            for (SOCKET sock : m_clientSockets)
+            {
                 send(sock, command.c_str(), command.size() + 1, 0);
             }
-        } else if (command == "exit" || command == "q") {
+        }
+        else if (command == "/list")
+        {
+            std::cout << "Connected clients:" << std::endl;
+            // for (const auto& ip : m_clientIPs) {
+            //     std::cout << ip << std::endl;
+            // }
+        }
+        else if (command == "/exit" || command == "/q")
+        {
             stop();
+        }
+        else if (command == "/help")
+        {
+            std::cout
+                << "\'/scn\'"               << "\t\t\t" << "screenshot"                 << '\n'
+                << "\'/list\'"              << "\t\t\t" << "list all connected clients" << '\n'
+                << "\'/exit\' or \'/q\'"    << '\t'     << "turn off the server"        << '\n'
+                << "\'/help\'"              << "\t\t\t" << "display commands"           << std::endl;
+        }
+        else
+        {
+            std::cerr << "Unknown command (/help)" << std::endl;
         }
     }
 }

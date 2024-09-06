@@ -13,9 +13,10 @@ public:
     ~Client();
 
     void start();
+    void stop() const;
 
 private:
-    void listenForCommands();
+    void listenForCommands() const;
     static void captureScreenshot(const std::string& filePath);
     static void sendScreenshot(SOCKET sock);
     void sendClientInfo() const;  
