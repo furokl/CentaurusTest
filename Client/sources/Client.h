@@ -16,6 +16,7 @@ public:
 
 private:
     void listenForCommands();
-    void captureScreenshot(const std::string& filePath);
-    void sendScreenshot(SOCKET sock);
+    static void captureScreenshot(const std::string& filePath);
+    static void sendScreenshot(SOCKET sock);
+    void sendClientInfo() const;  
 };

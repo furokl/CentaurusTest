@@ -66,7 +66,17 @@ void Server::stop() {
 }
 
 void Server::handleClient(SOCKET clientSocket) {
+    char clientInfo[4096];
+    ZeroMemory(clientInfo, 4096);
+    int infoReceived = recv(clientSocket, clientInfo, 4096, 0);
+    if (infoReceived > 0) {
+        std::cout << "Client connected: " << std::string(clientInfo, 0, infoReceived) << std::endl;
+    } else {
+        std::cerr << "Failed to receive client info." << std::endl;
+    }
+
     char buf[4096];
+    
     while (m_serverRunning) {
         ZeroMemory(buf, 4096);
         int bytesReceived = recv(clientSocket, buf, 4096, 0);

