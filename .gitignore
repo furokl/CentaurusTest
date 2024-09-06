@@ -9,4 +9,5 @@
 ### Build configuration
 /Client/Build
 /Server/Build
-
+/Build
+/out

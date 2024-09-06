@@ -1,26 +1,74 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 #include <iostream>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <vector>
-#include <thread>
+#include <cstring>
+
+#include "Server.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
-const int PORT = 5050;
-std::vector<SOCKET> clientSockets;
-std::atomic<bool> serverRunning(true);
-// int argc, char* argv[]
+Server::Server(int port) : m_port(port), m_serverRunning(true) {
+    WSADATA wsData;
+    WORD ver = MAKEWORD(2, 2);
+    if (WSAStartup(ver, &wsData) != 0) {
+        std::cerr << "Can't initialize Winsock! Quitting" << std::endl;
+        exit(1);
+    }
 
-// Функция для обработки каждого клиента
-void handleClient(SOCKET clientSocket) {
+    m_listeningSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (m_listeningSocket == INVALID_SOCKET) {
+        std::cerr << "Can't create a socket! Quitting" << std::endl;
+        WSACleanup();
+        exit(1);
+    }
+
+    sockaddr_in hint;
+    hint.sin_family = AF_INET;
+    hint.sin_port = htons(port);
+    hint.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(m_listeningSocket, (sockaddr*)&hint, sizeof(hint)) == SOCKET_ERROR) {
+        std::cerr << "Can't bind socket! Quitting" << std::endl;
+        closesocket(m_listeningSocket);
+        WSACleanup();
+        exit(1);
+    }
+
+    if (listen(m_listeningSocket, SOMAXCONN) == SOCKET_ERROR) {
+        std::cerr << "Can't listen on socket! Quitting" << std::endl;
+        closesocket(m_listeningSocket);
+        WSACleanup();
+        exit(1);
+    }
+}
+
+Server::~Server() {
+    stop();
+}
+
+void Server::start() {
+    std::thread acceptThread(&Server::acceptClients, this);
+    std::thread commandThread(&Server::processCommands, this);
+    acceptThread.join();
+    commandThread.join();
+}
+
+void Server::stop() {
+    m_serverRunning = false;
+
+    for (SOCKET sock : m_clientSockets) {
+        send(sock, "exit", 4, 0);
+        closesocket(sock);
+    }
+
+    closesocket(m_listeningSocket);
+    WSACleanup();
+}
+
+void Server::handleClient(SOCKET clientSocket) {
     char buf[4096];
-    
-    while (serverRunning) {
+    while (m_serverRunning) {
         ZeroMemory(buf, 4096);
-
-        // Ожидаем данные от клиента
         int bytesReceived = recv(clientSocket, buf, 4096, 0);
         if (bytesReceived == SOCKET_ERROR) {
             std::cerr << "Error receiving data" << std::endl;
@@ -32,19 +80,13 @@ void handleClient(SOCKET clientSocket) {
             break;
         }
 
-        // Выводим данные клиента
         std::cout << "Received: " << std::string(buf, 0, bytesReceived) << std::endl;
 
-        // Проверяем запрос на скриншот
         if (std::string(buf, 0, bytesReceived) == "screenshot") {
-            // Логика получения скриншота от клиента (принимаем файл)
             std::cout << "Requesting screenshot..." << std::endl;
-
-            // Ожидаем бинарные данные скриншота
-            char screenshotBuf[8192];  // Буфер для получения данных скриншота
+            char screenshotBuf[8192];
             int screenshotBytesReceived = recv(clientSocket, screenshotBuf, 8192, 0);
             
-            // Сохраняем скриншот в файл
             FILE* file;
             errno_t err = fopen_s(&file, "screenshot.bmp", "wb");
             if (err != 0) {
@@ -57,99 +99,39 @@ void handleClient(SOCKET clientSocket) {
             std::cout << "Screenshot saved as screenshot.bmp" << std::endl;
         }
     }
-
-    // Закрываем сокет
     closesocket(clientSocket);
 }
 
-int main() {
-    // Инициализация Winsock
-    WSADATA wsData;
-    WORD ver = MAKEWORD(2, 2);
-    int wsOk = WSAStartup(ver, &wsData);
-    if (wsOk != 0) {
-        std::cerr << "Can't Initialize winsock! Quitting" << std::endl;
-        return 1;
-    }
+void Server::acceptClients() {
+    while (m_serverRunning) {
+        sockaddr_in client;
+        int clientSize = sizeof(client);
+        SOCKET clientSocket = accept(m_listeningSocket, (sockaddr*)&client, &clientSize);
 
-    // Создаем сокет
-    SOCKET listening = socket(AF_INET, SOCK_STREAM, 0);
-    if (listening == INVALID_SOCKET) {
-        std::cerr << "Can't create a socket! Quitting" << std::endl;
-        WSACleanup();
-        return 1;
-    }
-
-    // Привязываем IP-адрес и порт к сокету
-    sockaddr_in hint;
-    hint.sin_family = AF_INET;
-    hint.sin_port = htons(PORT);
-    hint.sin_addr.s_addr = INADDR_ANY;
-
-    bind(listening, (sockaddr*)&hint, sizeof(hint));
-
-    // Запускаем сокет на прослушивание
-    listen(listening, SOMAXCONN);
-    
-    std::vector<std::thread> threads;
-
-    // Цикл для обработки подключений клиентов
-    std::thread clientThread([&](){
-        while (serverRunning) {
-            sockaddr_in client;
-            int clientSize = sizeof(client);
-            SOCKET clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
-
-            if (clientSocket == INVALID_SOCKET) {
-                std::cerr << "Invalid client socket" << std::endl;
-                closesocket(listening);
-                WSACleanup();
-                return;
-            }
-
-            clientSockets.push_back(clientSocket);
-            threads.push_back(std::thread(handleClient, clientSocket));
-
-            std::cout << "Client connected!" << std::endl;
+        if (clientSocket == INVALID_SOCKET) {
+            std::cerr << "Invalid client socket" << std::endl;
+            continue;
         }
-    });
-    
-    // Командная строка для отправки команд клиентам
+
+        m_clientSockets.push_back(clientSocket);
+        m_clientThreads.emplace_back(&Server::handleClient, this, clientSocket);
+
+        std::cout << "Client connected!" << std::endl;
+    }
+}
+
+void Server::processCommands() {
     std::string command;
-    while (serverRunning) {
+    while (m_serverRunning) {
         std::cout << "Enter command (screenshot): ";
         std::cin >> command;
 
         if (command == "screenshot") {
-            for (SOCKET sock : clientSockets) {
+            for (SOCKET sock : m_clientSockets) {
                 send(sock, command.c_str(), command.size() + 1, 0);
-            } 
-        } else if (command == "exit" || command == "q") {
-            serverRunning = false;
-            for (SOCKET sock : clientSockets) {
-                send(sock, command.c_str(), command.size() + 1, 0);
-                closesocket(sock); // Закрываем все сокеты клиентов
             }
+        } else if (command == "exit" || command == "q") {
+            stop();
         }
     }
-
-
-    // Ожидаем завершения клиентских потоков
-    std::cerr << std::boolalpha << clientThread.joinable() << '\n';
-    clientThread.detach();
-    
-    // Ожидаем завершения всех потоков
-    for (auto& t : threads) {
-        if (t.joinable()) {
-            t.join();
-        }
-    }
-
-    // Закрываем прослушивающий сокет
-    closesocket(listening);
-    
-    // Очищаем Winsock
-    WSACleanup();
-
-    return 0;
 }
