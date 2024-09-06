@@ -1,0 +1,12 @@
+### Custom
+*lnk
+*bmp
+
+### IDE files
+.vs
+.idea
+
+### Build configuration
+/Client/Build
+/Server/Build
+
