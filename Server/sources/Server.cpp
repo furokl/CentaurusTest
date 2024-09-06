@@ -7,6 +7,8 @@
 
 #include <fstream>
 
+#include "Constants.h"
+
 #pragma comment(lib, "ws2_32.lib")
 
 Server::Server(u_short port)
@@ -86,15 +88,39 @@ void Server::stop() {
  * @param clientSocket Сокет клиента.
  */
 void Server::handleClient(const SOCKET clientSocket) {
-    // Получаем IP клиента
+    FClientInfo clientInfo;
     sockaddr_in clientAddr;
     int clientAddrSize = sizeof(clientAddr);
     getpeername(clientSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-    char* clientIP = inet_ntoa(clientAddr.sin_addr);
-    std::cout << "Client connected: " << clientIP << std::endl;
-
+    strcpy(clientInfo.ipv4, inet_ntoa(clientAddr.sin_addr));
+    
+    // Получаем время подключения
+    auto now = std::chrono::system_clock::now();
+    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+    std::strftime(clientInfo.time, sizeof(clientInfo.time), "%Y-%m-%d %H:%M:%S", std::localtime(&currentTime));
+    
+    // Получаем имя пользователя и компьютера
+    char username[256];
+    DWORD username_len = sizeof(username);
+    GetUserNameA(username, &username_len);
+    strcpy(clientInfo.user, username);
+    
+    // Получаем имя компьютера
+    char computerName[256];
+    DWORD computerName_len = sizeof(computerName);
+    GetComputerNameA(computerName, &computerName_len);
+    strcpy(clientInfo.name, computerName);
+    
     // Добавляем клиента в вектор
-    m_clients.push_back({}); // Пример добавления клиента, если нужно
+    m_clients.push_back(clientInfo);
+    std::cout
+    << "Client connected: "
+    << "Id: " << clientInfo.id << " | "
+    << "IP: " << clientInfo.ipv4 << " | "
+    << "User: " << clientInfo.user << " | "
+    << "Name: " << clientInfo.name << " | "
+    << "Time: " << clientInfo.time << " | "
+    << std::endl;
 
     char buf[4096];
     while (m_serverRunning) {
@@ -107,8 +133,13 @@ void Server::handleClient(const SOCKET clientSocket) {
             break;
         }
 
-        std::string command(buf, bytesReceived);
-        if (command == "screenshot") {
+        // Добавляем нулевой символ для корректного окончания строки
+        buf[bytesReceived] = '\0';
+
+        // Преобразуем буфер в строку
+        std::string command(buf);
+
+        if (command == "/scn") {
             std::cout << "Requesting screenshot..." << std::endl;
 
             // Получаем размер данных скриншота
@@ -133,10 +164,15 @@ void Server::handleClient(const SOCKET clientSocket) {
             }
 
             // Сохраняем скриншот в файл
-            std::ofstream outFile("screenshot.bmp", std::ios::binary);
+            std::string scnFileName = clientInfo.user;
+            scnFileName.append("_");
+            scnFileName.append(clientInfo.ipv4);
+            scnFileName.append(".bmp");
+            std::string outPath = (Centaurus::contentPath / scnFileName).string();
+            std::ofstream outFile(outPath, std::ios::binary);
             outFile.write(reinterpret_cast<char*>(screenshotData.data()), screenshotData.size());
             outFile.close();
-            std::cout << "Screenshot saved as screenshot.bmp" << std::endl;
+            std::cout << "Screenshot saved as " << outPath << std::endl;
         }
     }
 

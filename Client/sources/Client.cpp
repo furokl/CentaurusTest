@@ -198,6 +198,14 @@ void Client::sendScreenshot(SOCKET sock) {
     // Захватываем скриншот и получаем данные
     std::vector<BYTE> screenshotData = captureScreenshot();
 
+    // Сначала отправляем команду "/scn" для запроса на сервере
+    const std::string command = "/scn";
+    int commandSent = send(sock, command.c_str(), command.size(), 0);
+    if (commandSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send screenshot command, error: " << WSAGetLastError() << std::endl;
+        return;
+    }
+    
     // Отправляем данные скриншота
     int totalBytesSent = 0;
     int dataSize = static_cast<int>(screenshotData.size());
