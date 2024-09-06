@@ -137,107 +137,87 @@ void Client::sendClientInfo() const
  * Обработка снимка экрана и запись в файл (*bmp).
  * @param wPath Путь к файлу.
  */
-void Client::captureScreenshot(const std::string& wPath) {
-    BITMAPFILEHEADER bfHeader;
-    BITMAPINFOHEADER biHeader;
-    BITMAPINFO bInfo;
-    HGDIOBJ hTempBitmap;
-    HBITMAP hBitmap;
-    BITMAP bAllDesktops;
-    HDC hDC, hMemDC;
-    LONG lWidth, lHeight;
-    BYTE *bBits = NULL;
-    HANDLE hHeap = GetProcessHeap();
-    DWORD cbBits, dwWritten = 0;
-    HANDLE hFile;
-    INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-
-    ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
-    ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
-    ZeroMemory(&bInfo, sizeof(BITMAPINFO));
-    ZeroMemory(&bAllDesktops, sizeof(BITMAP));
-
-    hDC = GetDC(NULL);
-    hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
-    GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops);
-
-    lWidth = bAllDesktops.bmWidth;
-    lHeight = bAllDesktops.bmHeight;
-
-    DeleteObject(hTempBitmap);
-
-    bfHeader.bfType = (WORD)('B' | ('M' << 8));
-    bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    biHeader.biSize = sizeof(BITMAPINFOHEADER);
-    biHeader.biBitCount = 24;
-    biHeader.biCompression = BI_RGB;
-    biHeader.biPlanes = 1;
-    biHeader.biWidth = lWidth;
-    biHeader.biHeight = lHeight;
-
-    bInfo.bmiHeader = biHeader;
-
-    cbBits = (((24 * lWidth + 31)&~31) / 8) * lHeight;
-
-    hMemDC = CreateCompatibleDC(hDC);
-    hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID **)&bBits, NULL, 0);
-    SelectObject(hMemDC, hBitmap);
-    BitBlt(hMemDC, 0, 0, lWidth, lHeight, hDC, x, y, SRCCOPY);
-
+std::vector<BYTE> Client::captureScreenshot() {
+    // Изменяем метод на возврат вектора байтов
+    HDC hDC = GetDC(NULL);
+    HDC hMemDC = CreateCompatibleDC(hDC);
     
-    hFile = CreateFileA(wPath.c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if(INVALID_HANDLE_VALUE == hFile)
-    {
-        DeleteDC(hMemDC);
-        ReleaseDC(NULL, hDC);
-        DeleteObject(hBitmap);
+    // Получаем размеры экрана
+    int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    
+    HBITMAP hBitmap = CreateCompatibleBitmap(hDC, width, height);
+    SelectObject(hMemDC, hBitmap);
+    
+    // Копируем данные с экрана
+    BitBlt(hMemDC, 0, 0, width, height, hDC, 0, 0, SRCCOPY);
+    
+    // Создаем заголовок BMP
+    BITMAPFILEHEADER bmfHeader;
+    BITMAPINFOHEADER bi;
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = width;
+    bi.biHeight = height;
+    bi.biPlanes = 1;
+    bi.biBitCount = 24; // 24 бита на пиксель
+    bi.biCompression = BI_RGB;
+    bi.biSizeImage = 0;
+    bi.biXPelsPerMeter = 0;
+    bi.biYPelsPerMeter = 0;
+    bi.biClrUsed = 0;
+    bi.biClrImportant = 0;
 
-        return;
-    }
-    WriteFile(hFile, &bfHeader, sizeof(BITMAPFILEHEADER), &dwWritten, NULL);
-    WriteFile(hFile, &biHeader, sizeof(BITMAPINFOHEADER), &dwWritten, NULL);
-    WriteFile(hFile, bBits, cbBits, &dwWritten, NULL);
-    FlushFileBuffers(hFile);
-    CloseHandle(hFile);
+    // Выделяем память для данных изображения
+    std::vector<BYTE> imageData(width * height * 3 + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER));
+    DWORD dwSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    
+    // Заполняем заголовок BMP
+    bmfHeader.bfType = 'MB';
+    bmfHeader.bfSize = dwSize + imageData.size() - sizeof(BITMAPFILEHEADER);
+    bmfHeader.bfReserved1 = 0;
+    bmfHeader.bfReserved2 = 0;
+    bmfHeader.bfOffBits = dwSize;
 
+    // Копируем данные в вектор
+    memcpy(imageData.data(), &bmfHeader, sizeof(BITMAPFILEHEADER));
+    memcpy(imageData.data() + sizeof(BITMAPFILEHEADER), &bi, sizeof(BITMAPINFOHEADER));
+    GetDIBits(hDC, hBitmap, 0, height, imageData.data() + dwSize, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+
+    // Освобождаем ресурсы
+    DeleteObject(hBitmap);
     DeleteDC(hMemDC);
     ReleaseDC(NULL, hDC);
-    DeleteObject(hBitmap);
+
+    return imageData; // Возвращаем данные изображения
 }
 
 /**
  * Обработка и отправка на сервер снимка экрана.
  */
 void Client::sendScreenshot(SOCKET sock) {
-    const std::string screenshotFile = "screenshot.bmp";
-    const std::string screenPath = (Centaurus::contentPath / screenshotFile).string();
-    captureScreenshot(screenPath);
+    // Захватываем скриншот и получаем данные
+    std::vector<BYTE> screenshotData = captureScreenshot();
 
-    FILE* file;
-    errno_t err = fopen_s(&file, screenPath.c_str(), "rb");
-    if (err != 0)
-    {
-        std::cerr << "Error opening file for reading" << std::endl;
+    // Отправляем данные скриншота
+    int totalBytesSent = 0;
+    int dataSize = static_cast<int>(screenshotData.size());
+    
+    // Отправляем размер данных перед отправкой самого изображения
+    int sizeSent = send(sock, reinterpret_cast<char*>(&dataSize), sizeof(dataSize), 0);
+    if (sizeSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
         return;
     }
 
-    char buffer[4096];
-    while (!feof(file))
-    {
-        int bytesRead = fread(buffer, 1, sizeof(buffer), file);
-        if (bytesRead > 0)
-        {
-            int sendResult = send(sock, buffer, bytesRead, 0);
-            if (sendResult == SOCKET_ERROR)
-            {
-                std::cerr << "Failed to send screenshot data, error: " << WSAGetLastError() << std::endl;
-                break;
-            }
+    // Теперь отправляем данные скриншота
+    while (totalBytesSent < dataSize) {
+        int bytesSent = send(sock, reinterpret_cast<char*>(screenshotData.data()) + totalBytesSent, dataSize - totalBytesSent, 0);
+        if (bytesSent == SOCKET_ERROR) {
+            std::cerr << "Failed to send screenshot data, error: " << WSAGetLastError() << std::endl;
+            break;
         }
+        totalBytesSent += bytesSent;
     }
-
-    fclose(file);
 }
 
 /**

