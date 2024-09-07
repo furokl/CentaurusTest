@@ -4,8 +4,19 @@
 
 ## Кратко
 
-Было написано полноценное клиент-серверное приложение
+Было написано полноценное клиент-серверное приложение с применением C++ и WinApi.
+Клиентов может быть несколько, сервер - один.
+Все решения настроены при помощи CMake на стандарт C++17.
 
+Основные возможности сервера:
+* Получать информацию о времени подключения, ip-адрес, Имя пользователя, Имя компьютера.
+* Делать снимок экрана клиента.
+
+Основные команды сервера:
+`/scn {id}`  - сделать снимок экрана.
+`/list`      - отобразить список активных клиентов.
+`/exit`      - завершить сессию.
+`/help`      - отобразить возможные команды.
 
 ## Описание задачи
 
@@ -15,7 +26,9 @@ Explanation
 Simple application to show current work activity of all employers in organisation
 
 Example applications 
+
 https://www.teramind.co/solutions/employee-monitoring-software
+
 https://veriato.com/product/
 
 Client (windows) - `c`/`c++`
@@ -33,6 +46,10 @@ In response send link to github.com project page, which contains all Visual Stud
 ## Сборка и запуск
 
 Для построения решения и готового приложения необходимо запустить `build vs22.bat`.
+Подойдет для Visual Studio 2022
+для 19 версии отредактируйте строку на `cmake -G "Visual Studio 16 2019" -A x64`,
+также cmake подскажет другие IDE, если ввести `cmake -G`
+
 
 Основные инструкции файла:
 ```bat
@@ -41,4 +58,11 @@ cmake -G "Visual Studio 17 2022" -A x64 ..
 cmake --build . --config Release
 powershell [create lnk .sln]
 powershell [create lnk .exe]
+```
+
+Чтобы установить приложение на автозапуск необходимо запустить `autostart-client.bat`.
+```bat
+set "scriptPath=%~dp0"
+set "shortcutPath=%scriptPath%Centaurus-Client.exe.lnk"
+reg add [HKEY_CURRENT_USER]
 ```
