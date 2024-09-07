@@ -101,6 +101,10 @@ void Server::handleClient(const SOCKET clientSocket) {
     while (m_serverRunning) {
         std::string command = receiveString(clientSocket);
 
+        if (command.empty()) {
+            std::cout << "Client disconnected." << clientInfo;
+            break;
+        }
         if (command == "/connect") {
             char* receivedTime = receiveString(clientSocket);
             char* receivedUser = receiveString(clientSocket);
@@ -112,11 +116,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             CopyReceivedString(receivedName, clientInfo.name, sizeof(clientInfo.name));
             CopyReceivedString(receivedIPv4, clientInfo.ipv4, sizeof(clientInfo.ipv4));
             
-            std::cerr << "Client connected with the following info:\n";
-            std::cerr << "Time: " << clientInfo.time << "\n";
-            std::cerr << "Username: " << clientInfo.user << "\n";
-            std::cerr << "Computer Name: " << clientInfo.name << "\n";
-            std::cerr << "IP Address: " << clientInfo.ipv4 << "\n";
+            std::cout << "Client connected:\n" << clientInfo;
         }
         else if (command == Centaurus::cmd::screenshot) {
             std::cout << "Requesting screenshot..." << std::endl;
@@ -137,7 +137,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             scnFileName.append("_");
             scnFileName.append(clientInfo.ipv4);
             scnFileName.append(".bmp");
-            std::string outPath = CONTENT_PATH + '/' + scnFileName;
+            std::string outPath = std::string(CONTENT_PATH) + '/' + scnFileName;
             std::ofstream outFile(outPath, std::ios::binary);
             outFile.write(screenshotData.data(), screenshotData.size());
             outFile.close();

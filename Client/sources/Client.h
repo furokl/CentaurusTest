@@ -22,7 +22,5 @@ private:
     void listenForCommands() const;
     static std::vector<BYTE> captureScreenshot();
     static void sendScreenshot(SOCKET sock);
-    
-
     void sendClientInfo() const;  
 };

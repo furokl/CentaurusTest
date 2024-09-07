@@ -21,4 +21,12 @@ struct FClientInfo
         , ipv4{}
     {
     }
+    friend std::ostream& operator<< (std::ostream &os, const FClientInfo &clientInfo)
+    {
+        return os   << "ID: " << clientInfo.id << " | "
+                    << "Time: " << clientInfo.time << " | "
+                    << "Username: " << clientInfo.user << " | "
+                    << "PC Name: " << clientInfo.name << " | "
+                    << "IP: " << clientInfo.ipv4 << std::endl;
+    }
 };
