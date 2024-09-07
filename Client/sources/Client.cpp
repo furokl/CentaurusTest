@@ -137,28 +137,6 @@ void Client::sendData(SOCKET sock, const std::vector<char>& data) {
     }
 }
 
-void Client::sendData(SOCKET sock, std::vector<BYTE>& data) {
-    int dataSize = static_cast<int>(data.size());
-
-    // Отправляем размер данных
-    int sizeSent = send(sock, reinterpret_cast<const char*>(&dataSize), sizeof(dataSize), 0);
-    if (sizeSent == SOCKET_ERROR) {
-        std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
-        return;
-    }
-
-    // Отправляем сами данные
-    int totalBytesSent = 0;
-    while (totalBytesSent < dataSize) {
-        int bytesSent = send(sock, reinterpret_cast<char*>(data.data()) + totalBytesSent, dataSize - totalBytesSent, 0);
-        if (bytesSent == SOCKET_ERROR) {
-            std::cerr << "Failed to send data, error: " << WSAGetLastError() << std::endl;
-            break;
-        }
-        totalBytesSent += bytesSent;
-    }
-}
-
 
 /**
  * Отправить основную информацию о текущем клиенте.
@@ -258,7 +236,29 @@ std::vector<BYTE> Client::captureScreenshot() {
 void Client::sendScreenshot(SOCKET sock) {
     std::vector<BYTE> screenshotData = captureScreenshot();
 
-    sendData(sock, screenshotData);
+    int commandSent = send(sock, Centaurus::cmd::screenshot.c_str(), Centaurus::cmd::screenshot.size(), 0);
+    if (commandSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send screenshot command, error: " << WSAGetLastError() << std::endl;
+        return;
+    }
+    
+    int totalBytesSent = 0;
+    int dataSize = static_cast<int>(screenshotData.size());
+    
+    int sizeSent = send(sock, reinterpret_cast<char*>(&dataSize), sizeof(dataSize), 0);
+    if (sizeSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
+        return;
+    }
+
+    while (totalBytesSent < dataSize) {
+        int bytesSent = send(sock, reinterpret_cast<char*>(screenshotData.data()) + totalBytesSent, dataSize - totalBytesSent, 0);
+        if (bytesSent == SOCKET_ERROR) {
+            std::cerr << "Failed to send screenshot data, error: " << WSAGetLastError() << std::endl;
+            break;
+        }
+        totalBytesSent += bytesSent;
+    }
 }
 
 /**

@@ -19,7 +19,6 @@ public:
 private:
     static void sendData(SOCKET sock, const std::string& str);
     static void sendData(SOCKET sock, const std::vector<char>& data);
-    static void sendData(SOCKET sock, std::vector<BYTE>& data);
     void listenForCommands() const;
     static std::vector<BYTE> captureScreenshot();
     static void sendScreenshot(SOCKET sock);
