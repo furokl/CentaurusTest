@@ -42,13 +42,6 @@ Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_
         }
         break; 
     }
-
-    // int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
-    // if (connResult == SOCKET_ERROR)
-    // {
-    //     std::cerr << "Can't connect to server! Quitting" << std::endl;
-    //     stop();
-    // }
 }
 
 Client::~Client() {
@@ -286,7 +279,7 @@ void Client::listenForCommands() const
                 std::cout << "Received screenshot command" << std::endl;
                 sendScreenshot(m_socket);
             }
-            else if (command == "/exit")
+            else if (command == Centaurus::cmd::exit)
             {
                 std::cout << "Server is shutting down" << std::endl;
             }

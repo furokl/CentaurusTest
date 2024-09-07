@@ -8,19 +8,22 @@ struct FClientInfo
     inline static std::atomic<int> idCounter{};
     
     int id;
+    SOCKET sock;
     char time[20];
     char user[UNLEN + 1];
-    char name[UNLEN + 1];
+    char name[MAX_COMPUTERNAME_LENGTH + 1];
     char ipv4[16];
     
     FClientInfo()
         : id(idCounter++)
+        , sock{}
         , time{}
         , user{}
         , name{}
         , ipv4{}
     {
     }
+
     friend std::ostream& operator<< (std::ostream &os, const FClientInfo &clientInfo)
     {
         return os   << "ID: " << clientInfo.id << " | "

