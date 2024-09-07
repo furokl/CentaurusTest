@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <Lmcons.h>
 
 struct FClientInfo
 {
@@ -8,8 +9,8 @@ struct FClientInfo
     
     int id;
     char time[20];
-    char user[256];
-    char name[256];
+    char user[UNLEN + 1];
+    char name[UNLEN + 1];
     char ipv4[16];
     
     FClientInfo()

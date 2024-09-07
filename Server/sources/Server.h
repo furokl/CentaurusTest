@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <string>
 
 #include "ClientInfo.h"
 
@@ -23,7 +24,9 @@ public:
     void stop();
 
 private:
+    static void CopyReceivedString(const char* source, char* destination, size_t destSize);
     void handleClient(SOCKET clientSocket);
+    static char* receiveString(SOCKET clientSocket);
     void acceptClients();
     void processCommands();
 };

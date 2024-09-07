@@ -1,4 +1,5 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <iostream>
 #include <cstring>
@@ -83,44 +84,20 @@ void Server::stop() {
     WSACleanup();
 }
 
+void Server::CopyReceivedString(const char* source, char* destination, size_t destSize) {
+    if (source) {
+        strncpy(destination, source, destSize - 1);
+        destination[destSize - 1] = '\0'; // Гарантируем, что строка завершена нулем
+        delete[] source; // Освобождаем память
+    }
+}
+
 /**
- * Прослушка конкретного клиента.
+ * Прослушка клиентов.
  * @param clientSocket Сокет клиента.
  */
 void Server::handleClient(const SOCKET clientSocket) {
     FClientInfo clientInfo;
-    sockaddr_in clientAddr;
-    int clientAddrSize = sizeof(clientAddr);
-    getpeername(clientSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-    strcpy(clientInfo.ipv4, inet_ntoa(clientAddr.sin_addr));
-    
-    // Получаем время подключения
-    auto now = std::chrono::system_clock::now();
-    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
-    std::strftime(clientInfo.time, sizeof(clientInfo.time), "%Y-%m-%d %H:%M:%S", std::localtime(&currentTime));
-    
-    // Получаем имя пользователя и компьютера
-    char username[256];
-    DWORD username_len = sizeof(username);
-    GetUserNameA(username, &username_len);
-    strcpy(clientInfo.user, username);
-    
-    // Получаем имя компьютера
-    char computerName[256];
-    DWORD computerName_len = sizeof(computerName);
-    GetComputerNameA(computerName, &computerName_len);
-    strcpy(clientInfo.name, computerName);
-    
-    // Добавляем клиента в вектор
-    m_clients.push_back(clientInfo);
-    std::cout
-    << "Client connected: "
-    << "Id: " << clientInfo.id << " | "
-    << "IP: " << clientInfo.ipv4 << " | "
-    << "User: " << clientInfo.user << " | "
-    << "Name: " << clientInfo.name << " | "
-    << "Time: " << clientInfo.time << " | "
-    << std::endl;
 
     char buf[4096];
     while (m_serverRunning) {
@@ -139,6 +116,24 @@ void Server::handleClient(const SOCKET clientSocket) {
         // Преобразуем буфер в строку
         std::string command(buf);
 
+        if (command == "/connect") {
+            char* receivedTime = receiveString(clientSocket);
+            char* receivedUser = receiveString(clientSocket);
+            char* receivedName = receiveString(clientSocket);
+            char* receivedIPv4 = receiveString(clientSocket);
+
+            CopyReceivedString(receivedTime, clientInfo.time, sizeof(clientInfo.time));
+            CopyReceivedString(receivedUser, clientInfo.user, sizeof(clientInfo.user));
+            CopyReceivedString(receivedName, clientInfo.name, sizeof(clientInfo.name));
+            CopyReceivedString(receivedIPv4, clientInfo.ipv4, sizeof(clientInfo.ipv4));
+            
+            std::cerr << "Client connected with the following info:\n";
+            std::cerr << "Time: " << clientInfo.time << "\n";
+            std::cerr << "Username: " << clientInfo.user << "\n";
+            std::cerr << "Computer Name: " << clientInfo.name << "\n";
+            std::cerr << "IP Address: " << clientInfo.ipv4 << "\n";
+        }
+        
         if (command == "/scn") {
             std::cout << "Requesting screenshot..." << std::endl;
 
@@ -177,42 +172,37 @@ void Server::handleClient(const SOCKET clientSocket) {
     }
 
     closesocket(clientSocket);
-    // FClientInfo clientInfo;
-    // sockaddr_in clientAddr;
-    // int clientAddrSize = sizeof(clientAddr);
-    // getpeername(clientSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-    // strcpy(clientInfo.ipv4, inet_ntoa(clientAddr.sin_addr));
-    //
-    // // Получаем время подключения
-    // auto now = std::chrono::system_clock::now();
-    // std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
-    // std::strftime(clientInfo.time, sizeof(clientInfo.time), "%Y-%m-%d %H:%M:%S", std::localtime(&currentTime));
-    //
-    // // Получаем имя пользователя и компьютера
-    // char username[256];
-    // DWORD username_len = sizeof(username);
-    // GetUserNameA(username, &username_len);
-    // strcpy(clientInfo.user, username);
-    //
-    // // Получаем имя компьютера
-    // char computerName[256];
-    // DWORD computerName_len = sizeof(computerName);
-    // GetComputerNameA(computerName, &computerName_len);
-    // strcpy(clientInfo.name, computerName);
-    //
-    // // Добавляем клиента в вектор
-    // m_clients.push_back(clientInfo);
-    // std::cout << "Client connected: ID=" << clientInfo.id << ", IP=" << clientInfo.ipv4 << std::endl;
-    //
-    // char buf[4096];
-    // while (m_serverRunning) {
-    //     ZeroMemory(buf, 4096);
-    //     int bytesReceived = recv(clientSocket, buf, 4096, 0);
-    //     // Обработка полученных данных
-    // }
-    //
-    // closesocket(clientSocket);
 }
+
+char* Server::receiveString(SOCKET clientSocket) {
+    int strSize;
+    int sizeReceived = recv(clientSocket, reinterpret_cast<char*>(&strSize), sizeof(strSize), 0);
+    if (sizeReceived == SOCKET_ERROR)
+    {
+        std::cerr << "Failed to receive string size, error: " << WSAGetLastError() << std::endl;
+        return nullptr;
+    }
+
+    // Выделяем память для строки
+    char* buffer = new char[strSize + 1];  // +1 для нулевого символа
+    buffer[strSize] = '\0';  // Нулевой символ в конце строки
+
+    int totalBytesReceived = 0;
+    while (totalBytesReceived < strSize)
+    {
+        int bytesRead = recv(clientSocket, buffer + totalBytesReceived, strSize - totalBytesReceived, 0);
+        if (bytesRead == SOCKET_ERROR)
+        {
+            std::cerr << "Error receiving string data, error: " << WSAGetLastError() << std::endl;
+            delete[] buffer;  // Освобождаем память в случае ошибки
+            return nullptr;
+        }
+        totalBytesReceived += bytesRead;
+    }
+
+    return buffer;  // Возвращаем указатель на строку
+}
+
 
 /**
  * Прослушка новых клиентов.

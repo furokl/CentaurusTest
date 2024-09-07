@@ -93,6 +93,28 @@ std::string getLocalIPv4() {
     return "";
 }
 
+void Client::sendString(SOCKET sock, const std::string& str) {
+    int strSize = static_cast<int>(str.size());
+    
+    // Сначала отправляем размер строки
+    int sizeSent = send(sock, reinterpret_cast<const char*>(&strSize), sizeof(strSize), 0);
+    if (sizeSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send string size, error: " << WSAGetLastError() << std::endl;
+        return;
+    }
+
+    // Затем отправляем саму строку
+    int totalBytesSent = 0;
+    while (totalBytesSent < strSize) {
+        int bytesSent = send(sock, str.data() + totalBytesSent, strSize - totalBytesSent, 0);
+        if (bytesSent == SOCKET_ERROR) {
+            std::cerr << "Failed to send string data, error: " << WSAGetLastError() << std::endl;
+            break;
+        }
+        totalBytesSent += bytesSent;
+    }
+}
+
 /**
  * Отправить основную информацию о текущем клиенте.
  */
@@ -117,20 +139,27 @@ void Client::sendClientInfo() const
     // IP-адрес
     std::string ipAddress = getLocalIPv4(); // Используем IP-адрес сервера для упрощения
 
-    // Собираем информацию в строку
-    std::stringstream infoStream;
-    infoStream << timeStream.str() << " | ";
-    infoStream << "User: " << username << " | ";
-    infoStream << "PC Name: " << computerName << " | ";
-    infoStream << "IP Address: " << ipAddress;
-
-    // Отправляем информацию на сервер
-    std::string clientInfo = infoStream.str();
-    int sendResult = send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
-    if (sendResult == SOCKET_ERROR)
-    {
-        std::cerr << "Failed to send client info, error: " << WSAGetLastError() << std::endl;
-    }
+    sendString(m_socket, Centaurus::cmd::connect);
+    std::string timeStr = timeStream.str();
+    sendString(m_socket, timeStr);
+    sendString(m_socket, username);
+    sendString(m_socket, computerName);
+    sendString(m_socket, ipAddress);
+    // // Собираем информацию в строку
+    // std::stringstream infoStream;
+    // infoStream << Centaurus::cmd::connect;
+    // infoStream << timeStream.str().size() << timeStream.str();
+    // infoStream << std::strlen(username) << username << " | ";
+    // infoStream << std::strlen(computerName) << computerName << " | ";
+    // infoStream << ipAddress.length() << ipAddress;
+    //
+    // // Отправляем информацию на сервер
+    // std::string clientInfo = infoStream.str();
+    // int sendResult = send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
+    // if (sendResult == SOCKET_ERROR)
+    // {
+    //     std::cerr << "Failed to send client info, error: " << WSAGetLastError() << std::endl;
+    // }
 }
 
 /**
