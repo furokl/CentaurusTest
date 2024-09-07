@@ -26,7 +26,6 @@ public:
 private:
     static void CopyReceivedString(const char* source, char* destination, size_t destSize);
     void handleClient(SOCKET clientSocket);
-    void handleScreenshot(SOCKET clientSocket, FClientInfo& clientInfo);
     static std::vector<char> receiveData(SOCKET clientSocket, int dataSize);
     static char* receiveString(SOCKET clientSocket);
     void acceptClients();
