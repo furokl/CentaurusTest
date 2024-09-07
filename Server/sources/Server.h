@@ -6,7 +6,7 @@
 #include <atomic>
 #include <string>
 
-#include "ClientInfo.h"
+struct FClientInfo;
 
 class Server {
     u_short m_port;
@@ -24,9 +24,7 @@ public:
 
 private:
     static void CopyReceivedString(const std::string& source, char* destination, size_t destSize);
-    void handleClient(SOCKET clientSocket);
-    static std::vector<char> receiveData(SOCKET clientSocket, int dataSize);
-    static std::string receiveString(SOCKET clientSocket);
+    void handleClient(SOCKET clientSocket, FClientInfo& clientInfo);
     void acceptClients();
     void processCommands();
 };

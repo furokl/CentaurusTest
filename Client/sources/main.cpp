@@ -8,7 +8,7 @@ int main()
     {
         ConfigReader config(CONFIG_PATH);
         u_short serverPort = std::stoi(config.getServerPort());
-        Client client(config.getServerIP().c_str(), serverPort);
+        Client client(config.getServerIP(), serverPort);
         client.start();
     }
     catch (const std::exception& e)

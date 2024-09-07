@@ -1,14 +1,13 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 
-#include <iostream>
-#include <cstring>
-
 #include "Server.h"
+#include "SocketManager.h"
+#include "Constants.h"
+#include "ClientInfo.h"
 
 #include <fstream>
-
-#include "Constants.h"
+#include <sstream>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -79,11 +78,23 @@ void Server::stop() {
         send(client.sock, "exit", 4, 0);
         closesocket(client.sock);
     }
+    
+    for (auto& thread : m_clientThreads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
 
     closesocket(m_listeningSocket);
     WSACleanup();
 }
 
+/**
+ * std::string to char[]
+ * @param source        Исходная строка для копирования.
+ * @param destination   Место назначения для копии.
+ * @param destSize      Размер буфера назначения.
+ */
 void Server::CopyReceivedString(const std::string& source, char* destination, size_t destSize) {
     if (!source.empty())
     {
@@ -100,52 +111,64 @@ void Server::CopyReceivedString(const std::string& source, char* destination, si
  * Прослушка клиентов.
  * @param clientSocket Сокет клиента.
  */
-void Server::handleClient(const SOCKET clientSocket) {
-    FClientInfo clientInfo;
+void Server::handleClient(const SOCKET clientSocket, FClientInfo& clientInfo) {
+    while (m_serverRunning)
+    {
+        std::string command = SocketManager::receiveString(clientSocket);
 
-    while (m_serverRunning) {
-        std::string command = receiveString(clientSocket);
-
-        if (command.empty()) {
-            std::cout << "Client disconnected.\n" << clientInfo;
-            m_clients.erase(std::remove_if(m_clients.begin(), m_clients.end(),
+        if (command.empty())
+        {
+            auto itClient = std::remove_if(m_clients.begin(), m_clients.end(),
                 [clientSocket](const FClientInfo& client)
                 {
                     return client.sock == clientSocket;
-                }), m_clients.end());
+                });
+            if (itClient != m_clients.end())
+            {
+                std::cout << "Client disconnected:\n" << *itClient;
+                m_clients.erase(itClient, m_clients.end());
+            }
 
-            break;
+            break; 
         }
-        if (command == Centaurus::cmd::connect) {
-            std::string receivedTime = receiveString(clientSocket);
-            std::string receivedUser = receiveString(clientSocket);
-            std::string receivedName = receiveString(clientSocket);
-            std::string receivedIPv4 = receiveString(clientSocket);
+        
+        if (command == Centaurus::cmd::connect)
+        {
+            std::string receivedTime = SocketManager::receiveString(clientSocket);
+            std::string receivedUser = SocketManager::receiveString(clientSocket);
+            std::string receivedName = SocketManager::receiveString(clientSocket);
+            std::string receivedIPv4 = SocketManager::receiveString(clientSocket);
 
-            CopyReceivedString(receivedTime, clientInfo.time, sizeof(clientInfo.time));
-            CopyReceivedString(receivedUser, clientInfo.user, sizeof(clientInfo.user));
-            CopyReceivedString(receivedName, clientInfo.name, sizeof(clientInfo.name));
-            CopyReceivedString(receivedIPv4, clientInfo.ipv4, sizeof(clientInfo.ipv4));
+            auto itClient = std::find_if(m_clients.begin(), m_clients.end(),
+                [clientSocket](const FClientInfo& client)
+                {
+                    return client.sock == clientSocket;
+                });
+            if (itClient != m_clients.end())
+            {
+                CopyReceivedString(receivedTime, itClient->time, sizeof(clientInfo.time));
+                CopyReceivedString(receivedUser, itClient->user, sizeof(clientInfo.user));
+                CopyReceivedString(receivedName, itClient->name, sizeof(clientInfo.name));
+                CopyReceivedString(receivedIPv4, itClient->ipv4, sizeof(clientInfo.ipv4));
+            }
             
-            m_clients.push_back(clientInfo);
-            
-            std::cout << "Client connected:\n" << clientInfo;
+            std::cout << "Client connected:\n" << *itClient;
         }
-        else if (command == Centaurus::cmd::screenshot) {
+        else if (command == Centaurus::cmd::screenshot)
+        {
             std::cout << "Requesting screenshot..." << std::endl;
 
-            // Получаем размер данных скриншота
             int dataSize;
             int sizeReceived = recv(clientSocket, reinterpret_cast<char*>(&dataSize), sizeof(dataSize), 0);
-            if (sizeReceived == SOCKET_ERROR) {
+            if (sizeReceived == SOCKET_ERROR)
+            {
                 std::cerr << "Failed to receive size of screenshot, error: " << WSAGetLastError() << std::endl;
                 break;
             }
 
-            std::vector<char> screenshotData = receiveData(clientSocket, dataSize);
+            std::vector<char> screenshotData = SocketManager::receiveData(clientSocket, dataSize);
             if (screenshotData.empty()) return;
             
-            // Сохраняем скриншот в файл
             std::string scnFileName = clientInfo.user;
             scnFileName.append("_");
             scnFileName.append(clientInfo.ipv4);
@@ -160,39 +183,6 @@ void Server::handleClient(const SOCKET clientSocket) {
 
     closesocket(clientSocket);
 }
-
-std::vector<char> Server::receiveData(SOCKET clientSocket, int dataSize) {
-    std::vector<char> buffer(dataSize);
-    int totalBytesReceived = 0;
-    
-    while (totalBytesReceived < dataSize) {
-        int bytesRead = recv(clientSocket, buffer.data() + totalBytesReceived, dataSize - totalBytesReceived, 0);
-        if (bytesRead == SOCKET_ERROR) {
-            std::cerr << "Error receiving data, error: " << WSAGetLastError() << std::endl;
-            return {};
-        }
-        totalBytesReceived += bytesRead;
-    }
-    
-    return buffer;
-}
-
-std::string Server::receiveString(SOCKET clientSocket) {
-    int strSize;
-    int sizeReceived = recv(clientSocket, reinterpret_cast<char*>(&strSize), sizeof(strSize), 0);
-    if (sizeReceived == SOCKET_ERROR || strSize <= 0) {
-        std::cerr << "Failed to receive string size, error: " << WSAGetLastError() << std::endl;
-        return "";
-    }
-
-    std::vector<char> stringData = receiveData(clientSocket, strSize);
-    if (stringData.empty()) {
-        return "";
-    }
-
-    return std::string(stringData.begin(), stringData.end());
-}
-
 
 /**
  * Прослушка новых клиентов.
@@ -211,8 +201,9 @@ void Server::acceptClients() {
         }
         
         m_clients.emplace_back();
-        m_clients.back().sock = clientSocket;
-        m_clientThreads.emplace_back(&Server::handleClient, this, clientSocket);
+        FClientInfo& clientInfo = m_clients.back();
+        clientInfo.sock = clientSocket;
+        m_clientThreads.emplace_back(&Server::handleClient, this, clientSocket, std::ref(clientInfo));
     }
 }
 
@@ -223,13 +214,27 @@ void Server::processCommands() {
     std::string command;
     while (m_serverRunning)
     {
-        std::cin >> command;
+        std::getline(std::cin, command);
 
-        if (command == Centaurus::cmd::screenshot)
+        if (command.substr(0, Centaurus::cmd::screenshot.length()) == Centaurus::cmd::screenshot)
         {
-            for (const auto &client : m_clients)
-            {
-                send(client.sock, command.c_str(), command.size() + 1, 0);
+            std::istringstream iss(command);
+            std::string cmd;
+            int clientId;
+
+            iss >> cmd;
+            iss >> clientId;
+
+            // Поиск клиента по ID
+            auto it = std::find_if(m_clients.begin(), m_clients.end(), [clientId](const FClientInfo& client) {
+                return client.id == clientId;
+            });
+
+            if (it != m_clients.end()) {
+                std::cout << "Requesting screenshot from client ID: " << clientId << std::endl;
+                send(it->sock, Centaurus::cmd::screenshot.c_str(), Centaurus::cmd::screenshot.size() + 1, 0);
+            } else {
+                std::cerr << "Client with ID " << clientId << " not found." << std::endl;
             }
         }
         else if (command == Centaurus::cmd::list)

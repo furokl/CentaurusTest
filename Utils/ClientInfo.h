@@ -1,11 +1,11 @@
 #pragma once
 
-#include <atomic>
 #include <Lmcons.h>
+#include <iostream>
 
 struct FClientInfo
 {
-    inline static std::atomic<int> idCounter{};
+    inline static int idCounter{};
     
     int id;
     SOCKET sock;

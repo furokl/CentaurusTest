@@ -1,5 +1,5 @@
 #pragma once
-#include <filesystem>
+
 #include <string>
 
 namespace Centaurus
@@ -15,9 +15,9 @@ namespace Centaurus
 
             unknownMsg = "Unknown command (/help)",
             helpMsg
-                = '\'' + screenshot + '\'' + "\t\t\t" + "screenshot" + '\n'
-                + '\'' + list + '\'' + "\t\t\t" + "list all connected clients" + '\n'
-                + '\'' + exit + '\'' + "\t\t\t" + "turn off the server" + '\n'
-                + '\'' + help + '\'' + "\t\t\t" + "display commands";
+                = "\t\'" + screenshot + '\'' + " \'id\'" + "\t\t\t" + "screenshot" + '\n'
+                + "\t\'" + list + '\'' + "\t\t\t" + "list all connected clients" + '\n'
+                + "\t\'" + exit + '\'' + "\t\t\t" + "turn off the server" + '\n'
+                + "\t\'" + help + '\'' + "\t\t\t" + "display commands";
     }
 }
