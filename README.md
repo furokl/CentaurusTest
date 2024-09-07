@@ -50,9 +50,11 @@ In response send link to github.com project page, which contains all Visual Stud
 ## Сборка и запуск
 
 Для построения решения и готового приложения необходимо запустить `build vs22.bat`.
+
 Подойдет для Visual Studio 2022
-для 19 версии отредактируйте строку на `cmake -G "Visual Studio 16 2019" -A x64`,
-также cmake подскажет другие IDE, если ввести `cmake -G`
+для 19 версии отредактируйте строку на `cmake -G "Visual Studio 16 2019" -A x64`.
+
+Также cmake подскажет другие IDE, если ввести `cmake -G`
 
 
 Основные инструкции файла:
