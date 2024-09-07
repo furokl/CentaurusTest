@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.26)
+cmake_minimum_required(VERSION 3.26)
 
 set(PROJECT_NAME Centaurus-Client)
 set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/APP_ICON.rc")
@@ -13,6 +13,9 @@ add_executable(${PROJECT_NAME}
 	${SOURCES} 
 	${APP_ICON}
 )
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE CONFIG_PATH="${CONFIG_PATH}")
+target_compile_definitions(${PROJECT_NAME} PRIVATE CONTENT_PATH="${CONTENT_PATH}")
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)

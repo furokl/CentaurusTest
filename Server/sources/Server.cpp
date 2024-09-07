@@ -87,8 +87,7 @@ void Server::stop() {
 void Server::CopyReceivedString(const char* source, char* destination, size_t destSize) {
     if (source) {
         strncpy(destination, source, destSize - 1);
-        destination[destSize - 1] = '\0'; // Гарантируем, что строка завершена нулем
-        delete[] source; // Освобождаем память
+        destination[destSize - 1] = '\0';
     }
 }
 
@@ -138,7 +137,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             scnFileName.append("_");
             scnFileName.append(clientInfo.ipv4);
             scnFileName.append(".bmp");
-            std::string outPath = (Centaurus::contentPath / scnFileName).string();
+            std::string outPath = CONTENT_PATH + '/' + scnFileName;
             std::ofstream outFile(outPath, std::ios::binary);
             outFile.write(screenshotData.data(), screenshotData.size());
             outFile.close();
