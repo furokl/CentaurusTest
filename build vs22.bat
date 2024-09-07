@@ -21,8 +21,8 @@ echo cmake -G "Visual Studio 17 2022" -A x64 ..
 cmake -G "Visual Studio 17 2022" -A x64 ..
 
 echo.
-echo --build . --config Debug
-cmake --build . --config Debug
+echo --build . --config Release
+cmake --build . --config Release
 
 echo.
 
@@ -32,8 +32,8 @@ for %%f in (*.sln) do (
 	
 )
 
-if exist Client\\Debug (
-	cd Client\\Debug
+if exist Client\\Release (
+	cd Client\\Release
 	for %%e in (*.exe) do (
 		echo -- Shortcut created for %%~ffe.
 		powershell -command "$s=(New-Object -COM WScript.Shell).CreateShortcut('..\\..\\..\\%%~nxe.lnk'); $s.TargetPath='%%~ffe'; $s.Save()"
@@ -41,8 +41,8 @@ if exist Client\\Debug (
 	cd ..\\..
 )
 
-if exist Server\\Debug (
-	cd Server\\Debug
+if exist Server\\Release (
+	cd Server\\Release
 	for %%e in (*.exe) do (
 		echo -- Shortcut created for %%~ffe.
 		powershell -command "$s=(New-Object -COM WScript.Shell).CreateShortcut('..\\..\\..\\%%~nxe.lnk'); $s.TargetPath='%%~ffe'; $s.Save()"

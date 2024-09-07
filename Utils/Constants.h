@@ -15,7 +15,7 @@ namespace Centaurus
 
             unknownMsg = "Unknown command (/help)",
             helpMsg
-                = "\t\'" + screenshot + '\'' + " \'id\'" + "\t\t\t" + "screenshot" + '\n'
+                = "\t\'" + screenshot + '\'' + " \'id\'" + "\t\t" + "screenshot" + '\n'
                 + "\t\'" + list + '\'' + "\t\t\t" + "list all connected clients" + '\n'
                 + "\t\'" + exit + '\'' + "\t\t\t" + "turn off the server" + '\n'
                 + "\t\'" + help + '\'' + "\t\t\t" + "display commands";
