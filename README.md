@@ -64,10 +64,10 @@ In response send link to github.com project page, which contains all Visual Stud
 
 В корне появятся ярлыки на решение `*sln` и исполняемые файлы: клиент, сервер `*exe`, также папка Build со сборкой.
 
-Подойдет для Visual Studio 2022
+Подойдет для Visual Studio 2022,
 для 19 версии отредактируйте строку на `cmake -G "Visual Studio 16 2019" -A x64`.
 
-Также cmake подскажет другие IDE, если ввести `cmake -G`
+Также cmake подскажет другие среды разработки, если ввести `cmake -G`
 
 
 Основные инструкции файла:
