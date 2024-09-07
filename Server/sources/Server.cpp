@@ -134,7 +134,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             std::cerr << "IP Address: " << clientInfo.ipv4 << "\n";
         }
         
-        if (command == "/scn") {
+        if (command == Centaurus::cmd::screenshot) {
             std::cout << "Requesting screenshot..." << std::endl;
 
             // Получаем размер данных скриншота
@@ -145,19 +145,9 @@ void Server::handleClient(const SOCKET clientSocket) {
                 break;
             }
 
-            std::vector<BYTE> screenshotData(dataSize);
-            int totalBytesReceived = 0;
-
-            // Получаем данные скриншота
-            while (totalBytesReceived < dataSize) {
-                int bytesRead = recv(clientSocket, reinterpret_cast<char*>(screenshotData.data()) + totalBytesReceived, dataSize - totalBytesReceived, 0);
-                if (bytesRead == SOCKET_ERROR) {
-                    std::cerr << "Error receiving screenshot data, error: " << WSAGetLastError() << std::endl;
-                    break;
-                }
-                totalBytesReceived += bytesRead;
-            }
-
+            std::vector<char> screenshotData = receiveData(clientSocket, dataSize);
+            if (screenshotData.empty()) return;
+            
             // Сохраняем скриншот в файл
             std::string scnFileName = clientInfo.user;
             scnFileName.append("_");
@@ -165,7 +155,7 @@ void Server::handleClient(const SOCKET clientSocket) {
             scnFileName.append(".bmp");
             std::string outPath = (Centaurus::contentPath / scnFileName).string();
             std::ofstream outFile(outPath, std::ios::binary);
-            outFile.write(reinterpret_cast<char*>(screenshotData.data()), screenshotData.size());
+            outFile.write(screenshotData.data(), screenshotData.size());
             outFile.close();
             std::cout << "Screenshot saved as " << outPath << std::endl;
         }
@@ -174,33 +164,42 @@ void Server::handleClient(const SOCKET clientSocket) {
     closesocket(clientSocket);
 }
 
+std::vector<char> Server::receiveData(SOCKET clientSocket, int dataSize) {
+    std::vector<char> buffer(dataSize);
+    int totalBytesReceived = 0;
+    
+    while (totalBytesReceived < dataSize) {
+        int bytesRead = recv(clientSocket, buffer.data() + totalBytesReceived, dataSize - totalBytesReceived, 0);
+        if (bytesRead == SOCKET_ERROR) {
+            std::cerr << "Error receiving data, error: " << WSAGetLastError() << std::endl;
+            return {};
+        }
+        totalBytesReceived += bytesRead;
+    }
+    
+    return buffer;
+}
+
 char* Server::receiveString(SOCKET clientSocket) {
     int strSize;
     int sizeReceived = recv(clientSocket, reinterpret_cast<char*>(&strSize), sizeof(strSize), 0);
-    if (sizeReceived == SOCKET_ERROR)
-    {
+    if (sizeReceived == SOCKET_ERROR) {
         std::cerr << "Failed to receive string size, error: " << WSAGetLastError() << std::endl;
         return nullptr;
     }
 
-    // Выделяем память для строки
-    char* buffer = new char[strSize + 1];  // +1 для нулевого символа
-    buffer[strSize] = '\0';  // Нулевой символ в конце строки
-
-    int totalBytesReceived = 0;
-    while (totalBytesReceived < strSize)
-    {
-        int bytesRead = recv(clientSocket, buffer + totalBytesReceived, strSize - totalBytesReceived, 0);
-        if (bytesRead == SOCKET_ERROR)
-        {
-            std::cerr << "Error receiving string data, error: " << WSAGetLastError() << std::endl;
-            delete[] buffer;  // Освобождаем память в случае ошибки
-            return nullptr;
-        }
-        totalBytesReceived += bytesRead;
+    // Получаем данные строки
+    std::vector<char> stringData = receiveData(clientSocket, strSize);
+    if (stringData.empty()) {
+        return nullptr;
     }
 
-    return buffer;  // Возвращаем указатель на строку
+    // Преобразуем данные в строку
+    char* buffer = new char[strSize + 1];
+    std::copy(stringData.begin(), stringData.end(), buffer);
+    buffer[strSize] = '\0'; // Нулевой символ
+
+    return buffer;
 }
 
 
@@ -234,35 +233,31 @@ void Server::processCommands() {
     {
         std::cin >> command;
 
-        if (command == "/scn")
+        if (command == Centaurus::cmd::screenshot)
         {
             for (SOCKET sock : m_clientSockets)
             {
                 send(sock, command.c_str(), command.size() + 1, 0);
             }
         }
-        else if (command == "/list")
+        else if (command == Centaurus::cmd::list)
         {
-            std::cout << "Connected clients:" << std::endl;
+            std::cout << "Connected clients:" << '\n';
             // for (const auto& ip : m_clientIPs) {
             //     std::cout << ip << std::endl;
             // }
         }
-        else if (command == "/exit" || command == "/q")
+        else if (command == Centaurus::cmd::exit || command == Centaurus::cmd::quit)
         {
             stop();
         }
-        else if (command == "/help")
+        else if (command == Centaurus::cmd::help)
         {
-            std::cout
-                << "\'/scn\'"               << "\t\t\t" << "screenshot"                 << '\n'
-                << "\'/list\'"              << "\t\t\t" << "list all connected clients" << '\n'
-                << "\'/exit\' or \'/q\'"    << '\t'     << "turn off the server"        << '\n'
-                << "\'/help\'"              << "\t\t\t" << "display commands"           << std::endl;
+            std::cout << Centaurus::cmd::helpMsg << std::endl;
         }
         else
         {
-            std::cerr << "Unknown command (/help)" << std::endl;
+            std::cerr << Centaurus::cmd::unknownMsg << std::endl;
         }
     }
 }

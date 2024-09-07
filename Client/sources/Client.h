@@ -17,9 +17,12 @@ public:
     void stop() const;
 
 private:
+    static void sendData(SOCKET sock, const std::string& str);
+    static void sendData(SOCKET sock, const std::vector<char>& data);
     void listenForCommands() const;
     static std::vector<BYTE> captureScreenshot();
     static void sendScreenshot(SOCKET sock);
-    static void sendString(SOCKET sock, const std::string& str);
+    
+
     void sendClientInfo() const;  
 };
